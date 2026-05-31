@@ -86,13 +86,14 @@ body {
 ::-webkit-scrollbar-thumb:hover { background: rgba(99,155,255,0.4); }
 
 /* ── Layout Shell ──────────────────────────────────────────── */
+/* AFTER */
 .app-shell {
   display: grid;
   grid-template-columns: var(--sidebar-w) 1fr;
-  grid-template-rows: var(--topbar-h) 1fr;
   height: 100vh;
   overflow: hidden;
 }
+
 
 .sidebar {
   grid-row: 1 / -1;
@@ -125,10 +126,12 @@ body {
   z-index: 10;
 }
 
+/* AFTER */
 .main-content {
   overflow-y: auto;
   background: var(--bg-base);
   position: relative;
+  height: 100vh;        /* ADD THIS — ensures full height */
 }
 
 /* ── Typography ─────────────────────────────────────────────── */

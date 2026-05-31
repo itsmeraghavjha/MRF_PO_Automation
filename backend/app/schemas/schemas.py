@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from typing import Optional, List
 from datetime import datetime
 
@@ -7,12 +7,14 @@ from datetime import datetime
 
 class LineItemBase(BaseModel):
     material_code: Optional[str] = None
+    customer_sku: Optional[str] = None
     description: Optional[str] = None
     uom: Optional[str] = None
     hsn_code: Optional[str] = None
     qty: Optional[float] = None
     unit_price: Optional[float] = None
     mrp: Optional[float] = None
+    nlc: Optional[float] = None
     tax_rate: Optional[float] = None
     tax_amount: Optional[float] = None
     line_total: Optional[float] = None
@@ -51,6 +53,7 @@ class OrderSummary(BaseModel):
     po_date: Optional[str]
     customer_code: Optional[str]
     customer_name: Optional[str]
+    sold_to_party: Optional[str]
     status: str
     total_value: Optional[float]
     email_sender: Optional[str]
@@ -68,6 +71,9 @@ class OrderDetail(OrderSummary):
     vendor_gstin: Optional[str]
     ship_to_code: Optional[str]
     ship_to_address: Optional[str]
+    site_code: Optional[str]
+    sales_district: Optional[str]
+    sales_office: Optional[str]
     delivery_date: Optional[str]
     expiry_date: Optional[str]
     email_uid: Optional[str]
@@ -116,11 +122,42 @@ class DashboardResponse(BaseModel):
 
 # ── Master Data Schemas ──────────────────────────────────────────────────────
 
+# ── Customer Mapping ──
+
+class CustomerMappingBase(BaseModel):
+    cluster: str
+    state: Optional[str] = None
+    gst_number: Optional[str] = None
+    full_address: Optional[str] = None
+    site_code: Optional[str] = None
+    sold_to_party: Optional[str] = None
+    ship_to_party_code: Optional[str] = None
+    sales_district: Optional[str] = None
+    sales_office: Optional[str] = None
+    person_responsible: Optional[str] = None
+    email_id: Optional[str] = None
+    contact_number: Optional[str] = None
+
+
+class CustomerMappingResponse(CustomerMappingBase):
+    id: int
+    updated_at: Optional[datetime]
+
+    class Config:
+        from_attributes = True
+
+
+# ── Product Mapping ──
+
 class ProductMappingBase(BaseModel):
-    customer_product_text: str
-    sap_material_code: str
-    sap_product_description: Optional[str] = None
-    customer_code: Optional[str] = None
+    sold_to_party: str
+    customer_sku: Optional[str] = None
+    customer_product_text: Optional[str] = None
+    hfl_sku_code: str
+    description: Optional[str] = None
+    uom: Optional[str] = None
+    division: Optional[str] = None
+    taxable: bool = True
 
 
 class ProductMappingResponse(ProductMappingBase):
@@ -131,10 +168,17 @@ class ProductMappingResponse(ProductMappingBase):
         from_attributes = True
 
 
+# ── Price Master ──
+
 class PriceMasterBase(BaseModel):
-    customer_code: str
-    sap_material_code: str
-    approved_price: float
+    region: Optional[str] = None
+    sales_district: str
+    sold_to_party: str
+    sku_code: str
+    mrp: Optional[float] = None
+    margin: Optional[float] = None
+    offer: Optional[float] = None
+    nlc: float                          # Net Landing Cost — the approved price
     effective_from: Optional[str] = None
     effective_to: Optional[str] = None
 
@@ -147,10 +191,13 @@ class PriceMasterResponse(PriceMasterBase):
         from_attributes = True
 
 
+# ── Location Mapping (fallback) ──
+
 class LocationMappingBase(BaseModel):
-    customer_code: str
+    cluster: str
     address_pattern: str
     sap_ship_to_code: str
+    sales_district: Optional[str] = None
     city: Optional[str] = None
     state: Optional[str] = None
 
@@ -163,8 +210,10 @@ class LocationMappingResponse(LocationMappingBase):
         from_attributes = True
 
 
+# ── Inventory ──
+
 class InventoryMasterBase(BaseModel):
-    sap_material_code: str
+    hfl_sku_code: str
     plant_code: str
     unrestricted_stock: float = 0
 
@@ -177,13 +226,33 @@ class InventoryMasterResponse(InventoryMasterBase):
         from_attributes = True
 
 
+# ── Case Lot ──
+
 class CaseLotMasterBase(BaseModel):
-    sap_material_code: str
+    cluster: str
     sales_district: str
     case_qty: float
+    sku_code: str
 
 
 class CaseLotMasterResponse(CaseLotMasterBase):
+    id: int
+    updated_at: Optional[datetime]
+
+    class Config:
+        from_attributes = True
+
+
+# ── SH-SKU-SO ──
+
+class SHSKUSalesOfficeBase(BaseModel):
+    sales_office: str
+    ship_to_code: str
+    hfl_sku_code: str
+    material_description: Optional[str] = None
+
+
+class SHSKUSalesOfficeResponse(SHSKUSalesOfficeBase):
     id: int
     updated_at: Optional[datetime]
 
@@ -217,3 +286,12 @@ class SAPPushResponse(BaseModel):
     csv_path: str
     line_count: int
     pushed_at: datetime
+
+
+# ── Import Response ──────────────────────────────────────────────────────
+
+class ImportResponse(BaseModel):
+    imported: int
+    skipped: int = 0
+    errors: List[str] = []
+    message: str
