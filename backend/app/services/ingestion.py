@@ -1,6 +1,10 @@
 """
 Email Ingestion Service — polls IMAP inbox, processes PO attachments,
 deduplicates by UID checkpoint, and triggers the extraction + validation pipeline.
+
+Phase 3 additions:
+  - Auto-sends delivery confirmation request when status = AWAITING_DELIVERY_DATE
+  - Fixed _resolve_customer_code() — was referencing non-existent variation_name column
 """
 import os
 import io
@@ -11,7 +15,10 @@ from sqlalchemy.orm import Session
 from imap_tools import MailBox, AND
 from app.core.config import settings
 from app.db.base import SessionLocal
-from app.models.models import OrderLedger, OrderLineItem, AuditLog, SystemCheckpoint, CustomerMapping
+from app.models.models import (
+    OrderLedger, OrderLineItem, AuditLog,
+    SystemCheckpoint, CustomerMapping
+)
 from app.services.extraction import extract_po_data
 from app.services.validation import run_validation
 from app.services.sap_generator import generate_sap_csv
@@ -37,7 +44,6 @@ def run_ingestion_cycle():
             ) as mailbox:
                 mailbox.folder.set(settings.IMAP_FOLDER)
 
-                # Fetch emails newer than last checkpoint
                 criteria = AND(seen=False)
                 emails = list(mailbox.fetch(limit=5, reverse=True, mark_seen=False))
 
@@ -47,7 +53,7 @@ def run_ingestion_cycle():
                     uid = str(msg.uid)
 
                     if last_uid and int(uid) <= int(last_uid):
-                        continue  # Already processed
+                        continue
 
                     if not _should_process_email(msg.subject):
                         logger.info(f"Skipping email UID {uid}: '{msg.subject}'")
@@ -69,17 +75,13 @@ def run_ingestion_cycle():
 
 
 def _should_process_email(subject: str) -> bool:
-    """Check subject against keyword filters."""
     subject_upper = subject.upper()
-
     for blocked in BLOCKED_KEYWORDS:
         if blocked.upper() in subject_upper:
             return False
-
     for keyword in SUBJECT_KEYWORDS:
         if keyword.upper() in subject_upper:
             return True
-
     return False
 
 
@@ -93,13 +95,11 @@ def _process_email(msg, db: Session):
         if not any(name.endswith(ext) for ext in [".pdf", ".xlsx", ".xls", ".csv"]):
             continue
 
-        # Save attachment
         safe_name = f"{msg.uid}_{att.filename}"
         save_path = pdf_dir / safe_name
         save_path.write_bytes(att.payload)
         logger.info(f"Saved attachment: {save_path}")
 
-        # Extract text
         if name.endswith(".pdf"):
             text = extract_pdf_text(str(save_path))
         else:
@@ -109,41 +109,41 @@ def _process_email(msg, db: Session):
             logger.warning(f"Could not extract text from {att.filename}")
             continue
 
-        # AI extraction
         extracted = extract_po_data(text, subject=msg.subject)
 
         if not extracted:
             _create_failed_order(db, msg, str(save_path), "AI extraction failed")
             continue
 
-        # Reject non-PO documents
         if extracted.get("document_type") not in ["PURCHASE_ORDER", None]:
             logger.info(f"Skipping non-PO document: {extracted.get('document_type')}")
             continue
 
-        # Resolve customer code
         customer_code = _resolve_customer_code(
-            extracted.get("customer_name", ""), db
+            extracted.get("customer_name", ""),
+            extracted.get("site_code"),
+            db
         )
 
-        # Create order record
         order = _create_order(db, msg, extracted, customer_code, str(save_path))
 
-        # Run validation
         all_passed, summary = run_validation(order, db)
 
         if all_passed:
             if order.delivery_date:
                 order.status = "VALIDATED"
-                # Auto-push SAP CSV
                 try:
                     filename, path = generate_sap_csv(order)
                     order.status = "SAP_SUCCESS"
                     _audit(db, order.id, "SAP_PUSHED", f"CSV: {filename}")
+                    # ── Phase 3: send delivery confirmation after SAP push ──
+                    _trigger_delivery_request(order, db, msg)
                 except Exception as e:
                     logger.error(f"SAP CSV generation failed: {e}")
             else:
                 order.status = "AWAITING_DELIVERY_DATE"
+                # ── Phase 3: send delivery confirmation when date is missing ──
+                _trigger_delivery_request(order, db, msg)
         else:
             order.status = "VALIDATION_FAILED"
 
@@ -154,20 +154,126 @@ def _process_email(msg, db: Session):
         logger.info(f"Order {order.po_number} processed → {order.status}")
 
 
-def _resolve_customer_code(customer_name: str, db: Session) -> str:
-    """Normalize customer name to canonical code."""
-    if not customer_name:
+def _trigger_delivery_request(order: OrderLedger, db: Session, msg=None):
+    """
+    Auto-trigger a vendor delivery confirmation email.
+    Called after SAP push (SAP_SUCCESS) or when delivery date is absent (AWAITING_DELIVERY_DATE).
+    Uses a fake request object since we're not in an HTTP context.
+    """
+    try:
+        from app.api.routes.vendor import _resolve_vendor_email
+        from app.services.email_service import send_delivery_confirmation_request
+        from app.models.models import DeliveryToken
+        import uuid
+        from datetime import timedelta, timezone
+
+        recipient = _resolve_vendor_email(order, db)
+        if not recipient:
+            logger.info(f"[VENDOR] No vendor email for order {order.po_number} — skipping delivery request")
+            return
+
+        # Expire existing tokens
+        existing = db.query(DeliveryToken).filter(
+            DeliveryToken.order_id == order.id,
+            DeliveryToken.status == "PENDING"
+        ).all()
+        for t in existing:
+            t.status = "EXPIRED"
+
+        token_str = str(uuid.uuid4())
+        expires_at = datetime.now(timezone.utc) + timedelta(days=7)
+        token_rec = DeliveryToken(
+            token=token_str,
+            order_id=order.id,
+            recipient_email=recipient,
+            status="PENDING",
+            expires_at=expires_at,
+        )
+        db.add(token_rec)
+        db.flush()
+
+        base_url = settings.APP_BASE_URL.rstrip("/")
+        line_items = [
+            {"description": li.description, "uom": li.uom, "qty": li.qty}
+            for li in order.line_items
+        ]
+
+        sent = send_delivery_confirmation_request(
+            to_email=recipient,
+            po_number=order.po_number,
+            customer_name=order.customer_name or order.customer_code or "—",
+            ship_to_address=order.ship_to_address or "—",
+            delivery_date=order.delivery_date,
+            line_items=line_items,
+            token=token_str,
+            base_url=base_url,
+        )
+
+        _audit(
+            db, order.id, "DELIVERY_REQUEST_SENT",
+            f"Auto-triggered. Email {'sent' if sent else 'logged'} to {recipient}. Token: {token_str[:8]}…",
+            performed_by="system"
+        )
+        logger.info(f"[VENDOR] Delivery request {'sent' if sent else 'logged'} for {order.po_number} → {recipient}")
+
+    except Exception as e:
+        logger.error(f"[VENDOR] Failed to send delivery request for {order.po_number}: {e}")
+
+
+def _resolve_customer_code(customer_name: str, site_code: str | None, db: Session) -> str:
+    """
+    Normalize customer name → canonical cluster code.
+
+    BUG FIX: Original code referenced m.variation_name which doesn't exist.
+    Now uses cluster + full_address matching from CustomerMapping.
+    """
+    if not customer_name and not site_code:
         return "UNKNOWN"
 
-    mappings = db.query(CustomerMapping).all()
-    normalized = customer_name.lower().strip()
+    # 1. Site code exact match (most reliable)
+    if site_code:
+        rec = db.query(CustomerMapping).filter(
+            CustomerMapping.site_code == str(site_code).strip()
+        ).first()
+        if rec and rec.cluster:
+            return rec.cluster
 
-    for m in mappings:
-        if m.variation_name.lower() in normalized or normalized in m.variation_name.lower():
-            return m.normalized_code
+    # 2. Fuzzy match customer name against cluster values and full_address
+    if customer_name:
+        normalized = customer_name.lower().strip()
 
-    # Fallback: use first word uppercased
-    return customer_name.split()[0].upper()[:10] if customer_name else "UNKNOWN"
+        # Check cluster names (e.g. "Reliance" → "RRL")
+        CLUSTER_KEYWORDS = {
+            "reliance": "RRL",
+            "dmart": "DMT",
+            "avenue supermarts": "DMT",
+            "bigbasket": "BBK",
+            "zepto": "ZEP",
+            "amazon": "AMZ",
+            "walmart": "WMT",
+            "flipkart": "FLK",
+            "swiggy": "SWG",
+            "blinkit": "BLK",
+        }
+        for keyword, code in CLUSTER_KEYWORDS.items():
+            if keyword in normalized:
+                return code
+
+        # 3. Match against CustomerMapping.full_address or cluster
+        all_mappings = db.query(CustomerMapping).all()
+        for m in all_mappings:
+            if m.full_address and any(
+                word in m.full_address.lower()
+                for word in normalized.split()
+                if len(word) > 3
+            ):
+                return m.cluster or "UNKNOWN"
+
+    # 4. Fallback: first word uppercased
+    if customer_name:
+        return customer_name.split()[0].upper()[:10]
+
+    return "UNKNOWN"
 
 
 def _create_order(db: Session, msg, extracted: dict, customer_code: str, attachment_path: str) -> OrderLedger:
@@ -179,6 +285,7 @@ def _create_order(db: Session, msg, extracted: dict, customer_code: str, attachm
         customer_name=extracted.get("customer_name"),
         vendor_gstin=extracted.get("vendor_gstin"),
         ship_to_address=extracted.get("ship_to_address"),
+        site_code=extracted.get("site_code"),
         delivery_date=extracted.get("delivery_date"),
         expiry_date=extracted.get("expiry_date"),
         is_update=extracted.get("po_type") == "REVISED",
@@ -201,7 +308,8 @@ def _create_order(db: Session, msg, extracted: dict, customer_code: str, attachm
 
         item = OrderLineItem(
             order_id=order.id,
-            material_code=li.get("article_code"),
+            material_code=li.get("material_code") or li.get("vendor_article_code") or li.get("article_code"),
+            customer_sku=li.get("customer_sku") or li.get("article_code"),
             description=li.get("description"),
             uom=li.get("uom"),
             hsn_code=li.get("hsn_code"),
@@ -220,7 +328,6 @@ def _create_order(db: Session, msg, extracted: dict, customer_code: str, attachm
 
 
 def _create_failed_order(db: Session, msg, attachment_path: str, reason: str):
-    """Create a failed order record for emails that couldn't be processed."""
     order = OrderLedger(
         po_number=f"FAILED-{msg.uid}",
         status="VALIDATION_FAILED",
@@ -249,5 +356,10 @@ def _set_checkpoint(db: Session, key: str, value: str):
 
 
 def _audit(db: Session, order_id: int, event_type: str, description: str, performed_by: str = "system"):
-    log = AuditLog(order_id=order_id, event_type=event_type, description=description, performed_by=performed_by)
+    log = AuditLog(
+        order_id=order_id,
+        event_type=event_type,
+        description=description,
+        performed_by=performed_by
+    )
     db.add(log)

@@ -316,3 +316,35 @@ export interface ShSkuSo {
   material_description: string | null
   updated_at: string | null
 }
+
+
+ 
+// ── Vendor / Delivery Confirmation (Phase 3) ──────────────────────────────
+ 
+export const sendDeliveryRequest = (orderId: number) =>
+  request<DeliveryRequestResponse>(`/orders/${orderId}/send-delivery-request`, { method: 'POST' })
+ 
+export const getTokenStatus = (token: string) =>
+  request<DeliveryTokenStatus>(`/vendor/token-status/${token}`)
+ 
+// ── Types ──────────────────────────────────────────────────────────────────
+ 
+export interface DeliveryRequestResponse {
+  success: boolean
+  token: string
+  recipient: string
+  email_sent: boolean
+  expires_at: string
+  portal_url: string
+}
+ 
+export interface DeliveryTokenStatus {
+  token: string
+  order_id: number
+  po_number: string | null
+  recipient_email: string
+  status: 'PENDING' | 'VISITED' | 'UPDATED' | 'EXPIRED'
+  expires_at: string | null
+  created_at: string | null
+  current_delivery_date: string | null
+}

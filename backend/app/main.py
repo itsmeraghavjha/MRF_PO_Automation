@@ -8,33 +8,34 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
-
+ 
 from app.core.config import settings
 from app.db.base import init_db
 from app.api.routes import orders, dashboard, master_data
-
+from app.api.routes.vendor import api_router as vendor_api_router, portal_router   # ← NEW
+ 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
 )
 logger = logging.getLogger(__name__)
-
-
+ 
+ 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Initialize DB and start background scheduler on startup."""
     logger.info("Starting Heritage Foods PO Automation Platform")
-
+ 
     # Initialize database tables
     init_db()
     logger.info("Database initialized")
-
+ 
     # Start email ingestion scheduler
     if settings.IMAP_USER:
         try:
             from apscheduler.schedulers.background import BackgroundScheduler
             from app.services.ingestion import run_ingestion_cycle
-
+ 
             scheduler = BackgroundScheduler()
             scheduler.add_job(
                 run_ingestion_cycle,
@@ -50,25 +51,25 @@ async def lifespan(app: FastAPI):
             logger.warning(f"Could not start email scheduler: {e}")
     else:
         logger.info("IMAP_USER not configured — email ingestion disabled")
-
+ 
     # Seed demo data if database is empty
     _seed_demo_data_if_empty()
-
+ 
     yield
-
+ 
     # Shutdown
     if hasattr(app.state, "scheduler"):
         app.state.scheduler.shutdown()
         logger.info("Scheduler stopped")
-
-
+ 
+ 
 app = FastAPI(
     title="Heritage Foods PO Automation API",
     description="Purchase Order Automation Platform — Heritage Foods Limited",
     version="1.0.0",
     lifespan=lifespan
 )
-
+ 
 # CORS
 origins = [o.strip() for o in settings.CORS_ORIGINS.split(",")]
 app.add_middleware(
@@ -78,17 +79,20 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
+ 
 # Static files for stored PDFs
 pdf_dir = Path(settings.PDF_STORAGE_DIR)
 pdf_dir.mkdir(parents=True, exist_ok=True)
 app.mount("/pdfs", StaticFiles(directory=str(pdf_dir)), name="pdfs")
-
+ 
 # Routes
 app.include_router(orders.router, prefix="/api/v1")
 app.include_router(dashboard.router, prefix="/api/v1")
 app.include_router(master_data.router, prefix="/api/v1")
-
+app.include_router(vendor_api_router, prefix="/api/v1")   # ← NEW: /api/v1/orders/{id}/send-delivery-request
+app.include_router(portal_router)                          # ← NEW: /vendor/{token}
+ 
+ 
 
 @app.get("/health")
 def health_check():

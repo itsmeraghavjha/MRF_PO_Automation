@@ -2,13 +2,14 @@ import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, RefreshCw, Send, CheckCircle2, AlertTriangle,
-  Clock, FileText, Edit2, Save, X, ChevronRight, ExternalLink
+  Clock, FileText, Edit2, Save, X, ExternalLink
 } from 'lucide-react'
 import {
   getOrder, revalidateOrder, pushToSAP, updateLineItem,
   type OrderDetail, type LineItem
 } from '../services/api'
 import { StatusBadge, formatCurrency, formatDate, formatDateTime, CustomerChip } from '../components/shared/StatusBadge'
+import { DeliveryRequestButton } from '../components/shared/DeliveryRequestButton'
 
 export default function OrderDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -72,9 +73,7 @@ export default function OrderDetailPage() {
     }
   }
 
-  const handleLineItemSaved = async () => {
-    await load()
-  }
+  const handleLineItemSaved = async () => { await load() }
 
   if (loading) {
     return (
@@ -121,7 +120,7 @@ export default function OrderDetailPage() {
               {formatDateTime(order.created_at)} · {order.email_sender}
             </div>
           </div>
-          <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+          <div style={{ display: 'flex', gap: 6, flexShrink: 0, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
             {hasPdf && (
               <button
                 className="btn btn-ghost btn-sm"
@@ -148,6 +147,16 @@ export default function OrderDetailPage() {
           </div>
         </div>
 
+        {/* ── Phase 3: Send Delivery Request button row ── */}
+        <div style={{ marginBottom: 16 }}>
+          <DeliveryRequestButton
+            orderId={order.id}
+            orderStatus={order.status}
+            deliveryDate={order.delivery_date}
+            onSuccess={load}
+          />
+        </div>
+
         {/* Alerts */}
         {error && (
           <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 8, padding: '9px 12px', marginBottom: 12, color: '#ef4444', fontSize: 12 }}>
@@ -160,6 +169,29 @@ export default function OrderDetailPage() {
             {successMsg}
           </div>
         )}
+
+        {/* ── Phase 3: AWAITING_DELIVERY_DATE info banner ── */}
+        {order.status === 'AWAITING_DELIVERY_DATE' && (
+          <div style={{
+            background: 'rgba(245,158,11,0.08)',
+            border: '1px solid rgba(245,158,11,0.2)',
+            borderRadius: 8,
+            padding: '9px 12px',
+            marginBottom: 12,
+            fontSize: 12,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+          }}>
+            <Clock size={13} style={{ color: '#f59e0b', flexShrink: 0 }} />
+            <span style={{ color: 'var(--text-secondary)' }}>
+              <strong style={{ color: '#f59e0b' }}>Awaiting delivery date.</strong>{' '}
+              A confirmation link has been sent to the vendor. Once they confirm,
+              this order will move to VALIDATED automatically.
+            </span>
+          </div>
+        )}
+
         {order.rejection_summary && (
           <div style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 8, padding: '9px 12px', marginBottom: 12, fontSize: 12 }}>
             <AlertTriangle size={12} style={{ display: 'inline', marginRight: 5, color: '#ef4444' }} />
@@ -222,7 +254,13 @@ export default function OrderDetailPage() {
             )}
             {order.audit_logs.map(log => (
               <div key={log.id} style={{ display: 'flex', gap: 10, padding: '8px 16px', borderBottom: '1px solid var(--border)', alignItems: 'flex-start' }}>
-                <div style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--accent-blue)', marginTop: 5, flexShrink: 0 }} />
+                <div style={{
+                  width: 6, height: 6, borderRadius: '50%', marginTop: 5, flexShrink: 0,
+                  background: log.event_type === 'DELIVERY_REQUEST_SENT' ? '#f59e0b'
+                    : log.event_type === 'DELIVERY_DATE_CONFIRMED' ? '#10b981'
+                    : log.event_type === 'SAP_PUSHED' ? '#3b82f6'
+                    : 'var(--accent-blue)'
+                }} />
                 <div>
                   <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{log.description}</div>
                   <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 1 }}>
@@ -238,7 +276,6 @@ export default function OrderDetailPage() {
       {/* ── RIGHT PANEL: PDF Viewer ── */}
       {showPdf && hasPdf && (
         <div style={{ flex: '0 0 45%', display: 'flex', flexDirection: 'column', background: '#1a2332', borderLeft: '1px solid var(--border)' }}>
-          {/* PDF Toolbar */}
           <div style={{
             display: 'flex', alignItems: 'center', justifyContent: 'space-between',
             padding: '10px 14px', borderBottom: '1px solid var(--border)',
@@ -259,7 +296,6 @@ export default function OrderDetailPage() {
               </button>
             </div>
           </div>
-          {/* iframe */}
           <iframe
             src={pdfUrl!}
             style={{ flex: 1, border: 'none', width: '100%' }}
@@ -271,29 +307,20 @@ export default function OrderDetailPage() {
   )
 }
 
-// ── Line Items Table with live grand total ────────────────────────────────
+// ── Line Items Table ──────────────────────────────────────────────────────
 
 function LineItemsTable({ order, onSaved, canEdit }: {
   order: OrderDetail; onSaved: () => void; canEdit: boolean
 }) {
   const [lineItems, setLineItems] = useState(order.line_items)
 
-  useEffect(() => {
-    setLineItems(order.line_items)
-  }, [order.line_items])
+  useEffect(() => { setLineItems(order.line_items) }, [order.line_items])
 
   const updateLocalItem = (id: number, changes: Partial<LineItem>) => {
-    setLineItems(prev => prev.map(item =>
-      item.id === id ? { ...item, ...changes } : item
-    ))
+    setLineItems(prev => prev.map(item => item.id === id ? { ...item, ...changes } : item))
   }
 
-  // Live grand total from local state
-  const liveTotal = lineItems.reduce((sum, item) => {
-    const lineTotal = (item.qty ?? 0) * (item.unit_price ?? 0)
-    return sum + lineTotal
-  }, 0)
-
+  const liveTotal = lineItems.reduce((sum, item) => sum + (item.qty ?? 0) * (item.unit_price ?? 0), 0)
   const originalTotal = order.total_value ?? 0
   const totalChanged = Math.abs(liveTotal - originalTotal) > 0.01
 
@@ -301,16 +328,9 @@ function LineItemsTable({ order, onSaved, canEdit }: {
     <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
       <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <h3 style={{ fontSize: 13, fontWeight: 700, fontFamily: 'var(--font-display)', margin: 0 }}>Line Items</h3>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          {totalChanged && (
-            <span style={{ fontSize: 11, color: '#f59e0b' }}>
-              Edited total: {formatCurrency(liveTotal)}
-            </span>
-          )}
-          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 13, fontWeight: 700, color: totalChanged ? '#f59e0b' : '#10b981' }}>
-            {formatCurrency(totalChanged ? liveTotal : originalTotal)}
-          </span>
-        </div>
+        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 13, fontWeight: 700, color: totalChanged ? '#f59e0b' : '#10b981' }}>
+          {formatCurrency(totalChanged ? liveTotal : originalTotal)}
+        </span>
       </div>
       <div style={{ overflowX: 'auto' }}>
         <table className="data-table">
@@ -345,34 +365,21 @@ function LineItemsTable({ order, onSaved, canEdit }: {
   )
 }
 
-// ── Single Line Item Row ──────────────────────────────────────────────────
-
 function LineItemRow({ item, orderId, onSaved, onLocalChange, canEdit }: {
-  item: LineItem
-  orderId: number
-  onSaved: () => void
-  onLocalChange: (id: number, changes: Partial<LineItem>) => void
-  canEdit: boolean
+  item: LineItem; orderId: number; onSaved: () => void
+  onLocalChange: (id: number, changes: Partial<LineItem>) => void; canEdit: boolean
 }) {
   const [editing, setEditing] = useState(false)
   const [qty, setQty] = useState(String(item.qty ?? ''))
   const [price, setPrice] = useState(String(item.unit_price ?? ''))
   const [saving, setSaving] = useState(false)
 
-  // Live line total preview while editing
   const liveLineTotal = editing
     ? (Number(qty) || 0) * (Number(price) || 0)
     : (item.line_total ?? 0)
 
-  const handleQtyChange = (v: string) => {
-    setQty(v)
-    onLocalChange(item.id, { qty: Number(v) || 0, unit_price: Number(price) || 0 })
-  }
-
-  const handlePriceChange = (v: string) => {
-    setPrice(v)
-    onLocalChange(item.id, { qty: Number(qty) || 0, unit_price: Number(v) || 0 })
-  }
+  const handleQtyChange = (v: string) => { setQty(v); onLocalChange(item.id, { qty: Number(v) || 0, unit_price: Number(price) || 0 }) }
+  const handlePriceChange = (v: string) => { setPrice(v); onLocalChange(item.id, { qty: Number(qty) || 0, unit_price: Number(v) || 0 }) }
 
   const handleSave = async () => {
     setSaving(true)
@@ -383,16 +390,12 @@ function LineItemRow({ item, orderId, onSaved, onLocalChange, canEdit }: {
       })
       setEditing(false)
       onSaved()
-    } catch (e) {
-      console.error(e)
-    } finally {
-      setSaving(false)
-    }
+    } catch (e) { console.error(e) }
+    finally { setSaving(false) }
   }
 
   const handleCancel = () => {
-    setQty(String(item.qty ?? ''))
-    setPrice(String(item.unit_price ?? ''))
+    setQty(String(item.qty ?? '')); setPrice(String(item.unit_price ?? ''))
     setEditing(false)
     onLocalChange(item.id, { qty: item.qty ?? 0, unit_price: item.unit_price ?? 0 })
   }
@@ -403,9 +406,7 @@ function LineItemRow({ item, orderId, onSaved, onLocalChange, canEdit }: {
         {item.material_code || <span style={{ color: '#ef4444' }}>UNKNOWN</span>}
       </td>
       <td style={{ fontSize: 11, maxWidth: 160 }}>
-        <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {item.description || '—'}
-        </div>
+        <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.description || '—'}</div>
         {item.rejection_reason && (
           <div style={{ fontSize: 10, color: '#ef4444', marginTop: 2, whiteSpace: 'normal' }}>
             <AlertTriangle size={9} style={{ display: 'inline', marginRight: 3 }} />
@@ -414,45 +415,20 @@ function LineItemRow({ item, orderId, onSaved, onLocalChange, canEdit }: {
         )}
       </td>
       <td style={{ fontSize: 11, color: 'var(--text-muted)' }}>{item.uom || '—'}</td>
-      <td>
-        {editing ? (
-          <input className="input input-sm" style={{ width: 65 }} value={qty} onChange={e => handleQtyChange(e.target.value)} />
-        ) : (
-          <span className="mono-data">{item.qty ?? '—'}</span>
-        )}
-      </td>
-      <td>
-        {editing ? (
-          <input className="input input-sm" style={{ width: 80 }} value={price} onChange={e => handlePriceChange(e.target.value)} />
-        ) : (
-          <span className="mono-data">{item.unit_price != null ? `₹${item.unit_price}` : '—'}</span>
-        )}
-      </td>
+      <td>{editing ? <input className="input input-sm" style={{ width: 65 }} value={qty} onChange={e => handleQtyChange(e.target.value)} /> : <span className="mono-data">{item.qty ?? '—'}</span>}</td>
+      <td>{editing ? <input className="input input-sm" style={{ width: 80 }} value={price} onChange={e => handlePriceChange(e.target.value)} /> : <span className="mono-data">{item.unit_price != null ? `₹${item.unit_price}` : '—'}</span>}</td>
       <td className="mono-data" style={{ fontSize: 11 }}>{item.tax_rate != null ? `${item.tax_rate}%` : '—'}</td>
-      <td className="mono-data" style={{ color: editing ? '#f59e0b' : 'inherit' }}>
-        {formatCurrency(liveLineTotal)}
-      </td>
-      <td>
-        {item.is_valid
-          ? <span style={{ color: '#10b981', fontSize: 11 }}>✓ Valid</span>
-          : <span style={{ color: '#ef4444', fontSize: 11 }}>✕ Invalid</span>
-        }
-      </td>
+      <td className="mono-data" style={{ color: editing ? '#f59e0b' : 'inherit' }}>{formatCurrency(liveLineTotal)}</td>
+      <td>{item.is_valid ? <span style={{ color: '#10b981', fontSize: 11 }}>✓ Valid</span> : <span style={{ color: '#ef4444', fontSize: 11 }}>✕ Invalid</span>}</td>
       {canEdit && (
         <td>
           {editing ? (
             <div style={{ display: 'flex', gap: 4 }}>
-              <button className="btn btn-success btn-sm btn-icon" onClick={handleSave} disabled={saving}>
-                <Save size={11} />
-              </button>
-              <button className="btn btn-ghost btn-sm btn-icon" onClick={handleCancel}>
-                <X size={11} />
-              </button>
+              <button className="btn btn-success btn-sm btn-icon" onClick={handleSave} disabled={saving}><Save size={11} /></button>
+              <button className="btn btn-ghost btn-sm btn-icon" onClick={handleCancel}><X size={11} /></button>
             </div>
           ) : (
-            <button className="btn btn-ghost btn-sm btn-icon" onClick={() => setEditing(true)}>
-              <Edit2 size={11} />
-            </button>
+            <button className="btn btn-ghost btn-sm btn-icon" onClick={() => setEditing(true)}><Edit2 size={11} /></button>
           )}
         </td>
       )}
