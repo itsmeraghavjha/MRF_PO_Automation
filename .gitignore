@@ -1,0 +1,94 @@
+# =========================
+# Python
+# =========================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+.venv/
+
+# =========================
+# FastAPI
+# =========================
+*.db
+*.sqlite
+*.sqlite3
+alembic/versions/*.pyc
+
+# Environment Variables
+.env
+.env.local
+.env.production
+
+# Logs
+*.log
+logs/
+
+# Uploads & Generated Files
+backend/storage/pdfs/*
+backend/storage/sap_output/*
+
+# Keep folders
+!backend/storage/pdfs/.gitkeep
+!backend/storage/sap_output/.gitkeep
+
+# =========================
+# Node / React / Vite
+# =========================
+node_modules/
+dist/
+build/
+.vite/
+
+# npm
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# =========================
+# IDE
+# =========================
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# =========================
+# OS Files
+# =========================
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# =========================
+# Testing
+# =========================
+.coverage
+htmlcov/
+.pytest_cache/
+.mypy_cache/
+
+# =========================
+# Temporary Files
+# =========================
+tmp/
+temp/
+*.tmp
+*.bak
+
+# =========================
+# Generated Reports
+# =========================
+reports/
+exports/
+
+# =========================
+# Claude / AI Generated
+# =========================
+.claude/
+
