@@ -1,7 +1,7 @@
-import { NavLink, useLocation } from 'react-router-dom'
+import { NavLink } from 'react-router-dom'
 import {
   LayoutDashboard, Inbox, AlertTriangle, Database,
-  Settings, ChevronRight, Zap
+  ChevronRight, Zap
 } from 'lucide-react'
 
 const NAV = [

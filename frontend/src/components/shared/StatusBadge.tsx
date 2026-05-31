@@ -1,9 +1,10 @@
 import React from 'react'
-import { CheckCircle2, AlertTriangle, Clock, Loader2, CheckCheck, HelpCircle } from 'lucide-react'
+import { CheckCircle2, AlertTriangle, Clock, Loader2, CheckCheck, HelpCircle, LucideProps } from 'lucide-react'
 
+type LucideIcon = React.ForwardRefExoticComponent<Omit<LucideProps, "ref"> & React.RefAttributes<SVGSVGElement>>
 
 const STATUS_CONFIG: Record<string, {
-  label: string; cls: string; Icon: React.ComponentType<{ size?: number }>;
+  label: string; cls: string; Icon: LucideIcon;
 }> = {
   NEW:                    { label: 'Processing',     cls: 'badge-new',       Icon: Loader2 },
   VALIDATED:              { label: 'Ready for SAP',  cls: 'badge-validated', Icon: CheckCircle2 },
