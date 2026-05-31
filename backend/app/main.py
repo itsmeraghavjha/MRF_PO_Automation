@@ -113,62 +113,62 @@ def _seed_demo_data_if_empty():
 
         logger.info("Seeding demo data...")
 
-        # Customer mappings
+        # 1. Customer Mappings (Aligned with VR-05)
         customers = [
-            CustomerMapping(variation_name="Reliance Retail", normalized_code="RRL", display_name="Reliance Retail Ltd"),
-            CustomerMapping(variation_name="Reliance Smart", normalized_code="RRL", display_name="Reliance Retail Ltd"),
-            CustomerMapping(variation_name="DMart", normalized_code="DMT", display_name="Avenue Supermarts"),
-            CustomerMapping(variation_name="D-Mart", normalized_code="DMT", display_name="Avenue Supermarts"),
-            CustomerMapping(variation_name="BigBasket", normalized_code="BBK", display_name="BigBasket"),
-            CustomerMapping(variation_name="Zepto", normalized_code="ZEP", display_name="Zepto"),
-            CustomerMapping(variation_name="Amazon", normalized_code="AMZ", display_name="Amazon India"),
-            CustomerMapping(variation_name="Walmart", normalized_code="WMT", display_name="Walmart India"),
+            CustomerMapping(cluster="RRL", full_address="Reliance Smart, Jubilee Hills, Hyderabad", site_code="RRL-HYD-01", sold_to_party="RRL-HQ", ship_to_party_code="RRL-HYD-01", sales_district="HYD-DIST-1"),
+            CustomerMapping(cluster="DMT", full_address="DMart, Kukatpally, Hyderabad", site_code="DMT-HYD-01", sold_to_party="DMT-HQ", ship_to_party_code="DMT-HYD-01", sales_district="HYD-DIST-1"),
+            CustomerMapping(cluster="BBK", full_address="BigBasket Warehouse, Gachibowli, Hyderabad", site_code="BBK-HYD-02", sold_to_party="BBK-HQ", ship_to_party_code="BBK-HYD-02", sales_district="HYD-DIST-1"),
+            CustomerMapping(cluster="ZEP", full_address="Zepto Dark Store, Madhapur, Hyderabad", site_code="ZEP-HYD-01", sold_to_party="ZEP-HQ", ship_to_party_code="ZEP-HYD-01", sales_district="HYD-DIST-1"),
+            CustomerMapping(cluster="AMZ", full_address="Amazon FC, Outer Ring Road, Hyderabad", site_code="AMZ-HYD-FC", sold_to_party="AMZ-HQ", ship_to_party_code="AMZ-HYD-FC", sales_district="HYD-DIST-1"),
+            CustomerMapping(cluster="RRL", full_address="Reliance Fresh, Banjara Hills, Hyderabad", site_code="RRL-HYD-02", sold_to_party="RRL-HQ", ship_to_party_code="RRL-HYD-02", sales_district="HYD-DIST-1"),
+            CustomerMapping(cluster="DMT", full_address="DMart, SR Nagar, Hyderabad", site_code="DMT-HYD-02", sold_to_party="DMT-HQ", ship_to_party_code="DMT-HYD-02", sales_district="HYD-DIST-1"),
         ]
         db.bulk_save_objects(customers)
 
-        # Products
+        # 2. Product Mappings (Aligned with VR-01)
         products = [
-            ProductMapping(customer_product_text="Heritage Fresh Milk 1L", sap_material_code="HF-MIL-001", sap_product_description="Heritage Fresh Milk 1L", customer_code="RRL"),
-            ProductMapping(customer_product_text="Heritage Curd 400g", sap_material_code="HF-CUR-400", sap_product_description="Heritage Curd 400g", customer_code="RRL"),
-            ProductMapping(customer_product_text="Heritage Butter 500g", sap_material_code="HF-BUT-500", sap_product_description="Heritage Butter 500g", customer_code="RRL"),
-            ProductMapping(customer_product_text="Heritage Paneer 200g", sap_material_code="HF-PAN-200", sap_product_description="Heritage Paneer 200g", customer_code="DMT"),
-            ProductMapping(customer_product_text="Heritage Ghee 1kg", sap_material_code="HF-GHE-001", sap_product_description="Heritage Pure Ghee 1kg", customer_code="DMT"),
-            ProductMapping(customer_product_text="Heritage Lassi 200ml", sap_material_code="HF-LAS-200", sap_product_description="Heritage Lassi 200ml", customer_code="BBK"),
-            ProductMapping(customer_product_text="Heritage Cheese Slice 200g", sap_material_code="HF-CHE-200", sap_product_description="Heritage Processed Cheese 200g", customer_code="ZEP"),
+            ProductMapping(sold_to_party="RRL-HQ", customer_product_text="Heritage Fresh Milk 1L", hfl_sku_code="HF-MIL-001", description="Heritage Fresh Milk 1L", uom="CS"),
+            ProductMapping(sold_to_party="RRL-HQ", customer_product_text="Heritage Curd 400g", hfl_sku_code="HF-CUR-400", description="Heritage Curd 400g", uom="CS"),
+            ProductMapping(sold_to_party="RRL-HQ", customer_product_text="Heritage Butter 500g", hfl_sku_code="HF-BUT-500", description="Heritage Butter 500g", uom="EA"),
+            ProductMapping(sold_to_party="DMT-HQ", customer_product_text="Heritage Paneer 200g", hfl_sku_code="HF-PAN-200", description="Heritage Paneer 200g", uom="EA"),
+            ProductMapping(sold_to_party="DMT-HQ", customer_product_text="Heritage Ghee 1kg", hfl_sku_code="HF-GHE-001", description="Heritage Pure Ghee 1kg", uom="EA"),
+            ProductMapping(sold_to_party="BBK-HQ", customer_product_text="Heritage Lassi 200ml", hfl_sku_code="HF-LAS-200", description="Heritage Lassi 200ml", uom="CS"),
+            ProductMapping(sold_to_party="ZEP-HQ", customer_product_text="Heritage Cheese Slice 200g", hfl_sku_code="HF-CHE-200", description="Heritage Processed Cheese 200g", uom="EA"),
         ]
         db.bulk_save_objects(products)
 
-        # Prices
+        # 3. Prices (Aligned with VR-02)
         prices = [
-            PriceMaster(customer_code="RRL", sap_material_code="HF-MIL-001", approved_price=62.00),
-            PriceMaster(customer_code="RRL", sap_material_code="HF-CUR-400", approved_price=45.00),
-            PriceMaster(customer_code="RRL", sap_material_code="HF-BUT-500", approved_price=280.00),
-            PriceMaster(customer_code="DMT", sap_material_code="HF-PAN-200", approved_price=85.00),
-            PriceMaster(customer_code="DMT", sap_material_code="HF-GHE-001", approved_price=650.00),
-            PriceMaster(customer_code="BBK", sap_material_code="HF-LAS-200", approved_price=28.00),
-            PriceMaster(customer_code="ZEP", sap_material_code="HF-CHE-200", approved_price=115.00),
+            PriceMaster(sales_district="HYD-DIST-1", sold_to_party="RRL-HQ", sku_code="HF-MIL-001", nlc=62.00),
+            PriceMaster(sales_district="HYD-DIST-1", sold_to_party="RRL-HQ", sku_code="HF-CUR-400", nlc=45.00),
+            PriceMaster(sales_district="HYD-DIST-1", sold_to_party="RRL-HQ", sku_code="HF-BUT-500", nlc=280.00),
+            PriceMaster(sales_district="HYD-DIST-1", sold_to_party="DMT-HQ", sku_code="HF-PAN-200", nlc=85.00),
+            PriceMaster(sales_district="HYD-DIST-1", sold_to_party="DMT-HQ", sku_code="HF-GHE-001", nlc=650.00),
+            PriceMaster(sales_district="HYD-DIST-1", sold_to_party="BBK-HQ", sku_code="HF-LAS-200", nlc=28.00),
+            PriceMaster(sales_district="HYD-DIST-1", sold_to_party="ZEP-HQ", sku_code="HF-CHE-200", nlc=115.00),
         ]
         db.bulk_save_objects(prices)
 
-        # Inventory
+        # 4. Inventory (Aligned with VR-03)
         inventory = [
-            InventoryMaster(sap_material_code="HF-MIL-001", plant_code="HYD1", unrestricted_stock=5000),
-            InventoryMaster(sap_material_code="HF-CUR-400", plant_code="HYD1", unrestricted_stock=2400),
-            InventoryMaster(sap_material_code="HF-BUT-500", plant_code="HYD1", unrestricted_stock=800),
-            InventoryMaster(sap_material_code="HF-PAN-200", plant_code="HYD1", unrestricted_stock=1200),
-            InventoryMaster(sap_material_code="HF-GHE-001", plant_code="HYD1", unrestricted_stock=450),
-            InventoryMaster(sap_material_code="HF-LAS-200", plant_code="HYD1", unrestricted_stock=3000),
-            InventoryMaster(sap_material_code="HF-CHE-200", plant_code="HYD1", unrestricted_stock=600),
+            InventoryMaster(hfl_sku_code="HF-MIL-001", plant_code="HYD1", unrestricted_stock=5000),
+            InventoryMaster(hfl_sku_code="HF-CUR-400", plant_code="HYD1", unrestricted_stock=2400),
+            InventoryMaster(hfl_sku_code="HF-BUT-500", plant_code="HYD1", unrestricted_stock=800),
+            InventoryMaster(hfl_sku_code="HF-PAN-200", plant_code="HYD1", unrestricted_stock=1200),
+            InventoryMaster(hfl_sku_code="HF-GHE-001", plant_code="HYD1", unrestricted_stock=450),
+            InventoryMaster(hfl_sku_code="HF-LAS-200", plant_code="HYD1", unrestricted_stock=3000),
+            InventoryMaster(hfl_sku_code="HF-CHE-200", plant_code="HYD1", unrestricted_stock=600),
         ]
         db.bulk_save_objects(inventory)
 
         db.flush()
 
-        # Demo Orders
+        # 5. Demo Orders
         demo_orders = [
             {
                 "po_number": "RRL-PO-2026-4521",
                 "customer_code": "RRL", "customer_name": "Reliance Retail Ltd",
+                "sold_to_party": "RRL-HQ", "sales_district": "HYD-DIST-1",
                 "status": "SAP_SUCCESS", "total_value": 186000,
                 "po_date": "2026-05-29", "delivery_date": "2026-06-02",
                 "vendor_gstin": "36AAACH1234F1ZR",
@@ -178,6 +178,7 @@ def _seed_demo_data_if_empty():
             {
                 "po_number": "DMT-PO-2026-8834",
                 "customer_code": "DMT", "customer_name": "Avenue Supermarts (DMart)",
+                "sold_to_party": "DMT-HQ", "sales_district": "HYD-DIST-1",
                 "status": "VALIDATION_FAILED", "total_value": 142500,
                 "po_date": "2026-05-30", "delivery_date": "2026-06-03",
                 "vendor_gstin": "36AAACH1234F1ZR",
@@ -188,6 +189,7 @@ def _seed_demo_data_if_empty():
             {
                 "po_number": "BBK-PO-2026-3301",
                 "customer_code": "BBK", "customer_name": "BigBasket",
+                "sold_to_party": "BBK-HQ", "sales_district": "HYD-DIST-1",
                 "status": "VALIDATED", "total_value": 84000,
                 "po_date": "2026-05-30", "delivery_date": "2026-06-01",
                 "vendor_gstin": "36AAACH1234F1ZR",
@@ -197,6 +199,7 @@ def _seed_demo_data_if_empty():
             {
                 "po_number": "ZEP-PO-2026-1102",
                 "customer_code": "ZEP", "customer_name": "Zepto",
+                "sold_to_party": "ZEP-HQ", "sales_district": "HYD-DIST-1",
                 "status": "AWAITING_DELIVERY_DATE", "total_value": 57600,
                 "po_date": "2026-05-31", "delivery_date": None,
                 "vendor_gstin": "36AAACH1234F1ZR",
@@ -206,15 +209,17 @@ def _seed_demo_data_if_empty():
             {
                 "po_number": "RRL-PO-2026-4498",
                 "customer_code": "RRL", "customer_name": "Reliance Retail Ltd",
+                "sold_to_party": "RRL-HQ", "sales_district": "HYD-DIST-1",
                 "status": "SAP_SUCCESS", "total_value": 224000,
                 "po_date": "2026-05-28", "delivery_date": "2026-05-31",
                 "vendor_gstin": "36AAACH1234F1ZR",
-                "ship_to_code": "RRL-HYD-01", "ship_to_address": "Reliance Fresh, Banjara Hills, Hyderabad",
+                "ship_to_code": "RRL-HYD-02", "ship_to_address": "Reliance Fresh, Banjara Hills, Hyderabad",
                 "email_sender": "procurement@relianceretail.com",
             },
             {
                 "po_number": "AMZ-PO-2026-9920",
                 "customer_code": "AMZ", "customer_name": "Amazon India",
+                "sold_to_party": "AMZ-HQ", "sales_district": "HYD-DIST-1",
                 "status": "VALIDATION_FAILED", "total_value": 98750,
                 "po_date": "2026-05-31", "delivery_date": "2026-06-04",
                 "vendor_gstin": None,
@@ -225,10 +230,11 @@ def _seed_demo_data_if_empty():
             {
                 "po_number": "DMT-PO-2026-8801",
                 "customer_code": "DMT", "customer_name": "Avenue Supermarts (DMart)",
+                "sold_to_party": "DMT-HQ", "sales_district": "HYD-DIST-1",
                 "status": "SAP_SUCCESS", "total_value": 312000,
                 "po_date": "2026-05-27", "delivery_date": "2026-05-30",
                 "vendor_gstin": "36AAACH1234F1ZR",
-                "ship_to_code": "DMT-HYD-01", "ship_to_address": "DMart, SR Nagar, Hyderabad",
+                "ship_to_code": "DMT-HYD-02", "ship_to_address": "DMart, SR Nagar, Hyderabad",
                 "email_sender": "po@dmart.in",
             },
         ]
@@ -252,7 +258,7 @@ def _seed_demo_data_if_empty():
                 is_valid = od["status"] != "VALIDATION_FAILED"
                 rejection = None
                 if not is_valid and mat == "HF-BUT-500":
-                    rejection = "Price Mismatch: PO ₹295.00 vs Master ₹280.00"
+                    rejection = f"Price Mismatch: PO ₹295.00 vs NLC ₹280.00 (tolerance ±₹5.0)"
                     is_valid = False
 
                 item = OrderLineItem(
@@ -263,6 +269,7 @@ def _seed_demo_data_if_empty():
                     qty=qty,
                     unit_price=price if is_valid else price + 15,
                     mrp=price * 1.2,
+                    nlc=price, 
                     tax_rate=tax,
                     tax_amount=qty * price * tax / 100,
                     line_total=qty * price,

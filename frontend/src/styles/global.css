@@ -92,6 +92,11 @@ body {
   grid-template-columns: var(--sidebar-w) 1fr;
   height: 100vh;
   overflow: hidden;
+  transition: grid-template-columns 0.3s cubic-bezier(0.4, 0, 0.2, 1); /* Add this transition */
+}
+
+.app-shell.collapsed {
+  grid-template-columns: 68px 1fr;
 }
 
 
@@ -102,6 +107,7 @@ body {
   display: flex;
   flex-direction: column;
   overflow-y: auto;
+  overflow-x: hidden; /* Add this to prevent text overflow during collapse animation */
   position: relative;
 }
 

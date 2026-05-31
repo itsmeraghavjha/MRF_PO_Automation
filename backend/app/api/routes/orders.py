@@ -187,6 +187,7 @@ def _to_summary(order: OrderLedger) -> OrderSummary:
         po_date=order.po_date,
         customer_code=order.customer_code,
         customer_name=order.customer_name,
+        sold_to_party=order.sold_to_party,  # <--- ADD THIS LINE
         status=order.status,
         total_value=order.total_value,
         email_sender=order.email_sender,
@@ -205,6 +206,9 @@ def _to_detail(order: OrderLedger) -> OrderDetail:
         vendor_gstin=order.vendor_gstin,
         ship_to_code=order.ship_to_code,
         ship_to_address=order.ship_to_address,
+        site_code=getattr(order, "site_code", None),             # <-- ADDED
+        sales_district=getattr(order, "sales_district", None),   # <-- ADDED
+        sales_office=getattr(order, "sales_office", None),       # <-- ADDED
         delivery_date=order.delivery_date,
         expiry_date=order.expiry_date,
         email_uid=order.email_uid,

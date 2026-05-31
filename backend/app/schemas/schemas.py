@@ -295,3 +295,18 @@ class ImportResponse(BaseModel):
     skipped: int = 0
     errors: List[str] = []
     message: str
+
+
+
+class DistrictMappingBase(BaseModel):
+    ship_to_code: str
+    sales_district: str
+    customer_code: Optional[str] = None
+ 
+ 
+class DistrictMappingResponse(DistrictMappingBase):
+    id: int
+    updated_at: Optional[datetime]
+ 
+    class Config:
+        from_attributes = True

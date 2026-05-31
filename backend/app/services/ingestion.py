@@ -39,7 +39,7 @@ def run_ingestion_cycle():
 
                 # Fetch emails newer than last checkpoint
                 criteria = AND(seen=False)
-                emails = list(mailbox.fetch(criteria, mark_seen=False))
+                emails = list(mailbox.fetch(limit=5, reverse=True, mark_seen=False))
 
                 new_max_uid = last_uid
 

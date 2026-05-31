@@ -10,6 +10,7 @@ import { getDashboard } from './services/api'
 
 export default function App() {
   const [exceptionCount, setExceptionCount] = useState(0)
+  const [isCollapsed, setIsCollapsed] = useState(false) // Added state
   const location = useLocation()
 
   useEffect(() => {
@@ -19,8 +20,13 @@ export default function App() {
   }, [location.pathname])
 
   return (
-    <div className="app-shell">
-      <Sidebar exceptionCount={exceptionCount} />
+    // Append the 'collapsed' class dynamically
+    <div className={`app-shell ${isCollapsed ? 'collapsed' : ''}`}>
+      <Sidebar 
+        exceptionCount={exceptionCount} 
+        isCollapsed={isCollapsed} 
+        setIsCollapsed={setIsCollapsed} 
+      />
       <main className="main-content">
         <Routes>
           <Route path="/" element={<DashboardPage />} />

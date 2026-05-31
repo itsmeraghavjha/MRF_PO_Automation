@@ -1,6 +1,7 @@
 """
 Master Data API routes.
 Supports CRUD + bulk Excel/CSV import for all mapping tables.
+Real Heritage Foods schema — all field names match models.py exactly.
 """
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy.orm import Session
@@ -25,6 +26,7 @@ from app.schemas.schemas import (
     SHSKUSalesOfficeBase, SHSKUSalesOfficeResponse,
     ImportResponse,
 )
+from app.schemas.schemas import DistrictMappingBase, DistrictMappingResponse
 
 router = APIRouter(prefix="/master-data", tags=["master-data"])
 logger = logging.getLogger(__name__)
@@ -109,7 +111,6 @@ async def import_customers(file: UploadFile = File(...), db: Session = Depends(g
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Cannot parse file: {e}")
 
-    # Normalise column names
     df.columns = [c.strip() for c in df.columns]
 
     records = []
@@ -302,9 +303,6 @@ async def import_prices(file: UploadFile = File(...), db: Session = Depends(get_
             if not district or not sold_to or not sku or nlc is None:
                 errors.append(f"Row {i+2}: missing required field(s) — skipped")
                 continue
-            # Parse date strings like "01.05.2026"
-            eff_from = _str(row.get("Validity from", ""))
-            eff_to = _str(row.get("Validy To", ""))
             records.append(PriceMaster(
                 region=_str(row.get("Region", "")),
                 sales_district=district,
@@ -314,8 +312,8 @@ async def import_prices(file: UploadFile = File(...), db: Session = Depends(get_
                 margin=_float(row.get("MARGIN")),
                 offer=_float(row.get("OFFER")),
                 nlc=nlc,
-                effective_from=eff_from,
-                effective_to=eff_to,
+                effective_from=_str(row.get("Validity from", "")),
+                effective_to=_str(row.get("Validy To", "")),
             ))
         except Exception as e:
             errors.append(f"Row {i+2}: {e}")
@@ -362,6 +360,46 @@ def update_location(id: int, data: LocationMappingBase, db: Session = Depends(ge
 @router.delete("/locations/{id}")
 def delete_location(id: int, db: Session = Depends(get_db)):
     rec = db.query(LocationMapping).filter(LocationMapping.id == id).first()
+    if not rec:
+        raise HTTPException(status_code=404, detail="Not found")
+    db.delete(rec)
+    db.commit()
+    return {"deleted": id}
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# DISTRICT MAPPING
+# ══════════════════════════════════════════════════════════════════════════════
+
+@router.get("/districts", response_model=List[DistrictMappingResponse])
+def list_districts(db: Session = Depends(get_db)):
+    return db.query(DistrictMapping).all()
+
+
+@router.post("/districts", response_model=DistrictMappingResponse)
+def create_district(data: DistrictMappingBase, db: Session = Depends(get_db)):
+    rec = DistrictMapping(**data.model_dump())
+    db.add(rec)
+    db.commit()
+    db.refresh(rec)
+    return rec
+
+
+@router.put("/districts/{id}", response_model=DistrictMappingResponse)
+def update_district(id: int, data: DistrictMappingBase, db: Session = Depends(get_db)):
+    rec = db.query(DistrictMapping).filter(DistrictMapping.id == id).first()
+    if not rec:
+        raise HTTPException(status_code=404, detail="Not found")
+    for k, v in data.model_dump().items():
+        setattr(rec, k, v)
+    db.commit()
+    db.refresh(rec)
+    return rec
+
+
+@router.delete("/districts/{id}")
+def delete_district(id: int, db: Session = Depends(get_db)):
+    rec = db.query(DistrictMapping).filter(DistrictMapping.id == id).first()
     if not rec:
         raise HTTPException(status_code=404, detail="Not found")
     db.delete(rec)
