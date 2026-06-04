@@ -1,31 +1,48 @@
 """
-AI Extraction Service — uses Anthropic Claude to extract structured PO data
-from PDF/Excel text content. Implements retry logic and JSON schema validation.
+AI Extraction Service — Heritage Foods PO Automation
+=====================================================
+Uses Google Gemini (or Anthropic Claude as fallback) to extract structured
+PO data from PDF/Excel text.
+
+Key design:
+  - Customer profile is identified BEFORE extraction so customer-specific
+    rules can be injected into the prompt (fewer hallucinations, better accuracy).
+  - Returns a normalised dict with consistent field names regardless of which
+    customer sent the PO.
+  - All customer-specific column name quirks are handled HERE, not in validation.
 """
 import json
 import time
 import logging
+import re
 from typing import Optional
 from app.core.config import settings
+from app.services.customer_profiles import (
+    CustomerProfile,
+    get_extraction_rules_for_prompt,
+    VR01_EAN_ONLY,
+)
+
 import urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 logger = logging.getLogger(__name__)
 
-EXTRACTION_PROMPT = """You are a Purchase Order data extraction specialist for Heritage Foods Limited, an Indian FMCG company.
+# ── Base extraction prompt ─────────────────────────────────────────────────
+BASE_EXTRACTION_PROMPT = """You are a Purchase Order data extraction specialist for Heritage Foods Limited, an Indian FMCG company.
 
 Extract ALL structured data from the provided Purchase Order document text.
 
-Return ONLY a valid JSON object with this exact structure (no markdown, no explanation):
+Return ONLY a valid JSON object with this exact structure (no markdown, no explanation, no ```json blocks):
 
 {
   "po_type": "NEW" | "REVISED" | "CANCELLATION",
   "po_number": "string",
   "po_date": "YYYY-MM-DD or null",
-  "customer_code": "string", 
+  "customer_code": "string",
   "customer_name": "string",
+  "customer_gstin": "string or null",
   "site_code": "string or null",
-  "vendor_gstin": "string or null",
   "ship_to_address": "full address as string",
   "total_value": number or null,
   "delivery_date": "YYYY-MM-DD or null",
@@ -35,6 +52,7 @@ Return ONLY a valid JSON object with this exact structure (no markdown, no expla
     {
       "article_code": "string or null",
       "vendor_article_code": "string or null",
+      "ean": "string or null",
       "description": "string",
       "uom": "string",
       "hsn_code": "string or null",
@@ -48,44 +66,59 @@ Return ONLY a valid JSON object with this exact structure (no markdown, no expla
   ]
 }
 
-Rules:
-- po_type: If subject/content mentions "revised", "amendment", "update" → REVISED. If "cancel" → CANCELLATION. Otherwise → NEW.
-- customer_code: Deduce a 3-4 letter short code for the customer cluster (e.g., if Reliance Retail Limited -> "RRL", if DMart -> "DMT", if BigBasket -> "BBK").
-- site_code: Look specifically for "Site:" or "Store Code:" (e.g., S1AC).
-- total_value: Extract the grand total / Total Order Value of the PO.
-- article_code: The buyer's SKU/Article number.
-- vendor_article_code: Look for "Vendor Item No", "Vendor Article No", or the supplier's internal SKU.
-- document_type: If this is a Tax Invoice, Proforma Invoice, GRN, or Payment Advice — set accordingly. Only process as PURCHASE_ORDER if it truly is one.
-- All monetary values in INR (numbers only, no currency symbols).
-- Dates must be YYYY-MM-DD format. If date format is ambiguous (e.g. 01/05/2025), use context to determine DD/MM/YYYY (Indian standard).
-- If a field is not present in the document, use null.
-- Extract ALL line items — do not truncate.
-- vendor_gstin: Look for "GSTIN", "GST No", "Tax ID" near Heritage Foods' details."""
+GENERAL RULES:
+- po_type: "REVISED" if subject/content has "revised", "amendment", "update". "CANCELLATION" if "cancel". Otherwise "NEW".
+- customer_code: Deduce a short 3-6 letter code (e.g. Reliance Retail → "RRL", DMart → "DMT", Zepto → "ZEP").
+- customer_gstin: The GSTIN of the company that sent this Purchase Order (the buyer). This is their GST registration number printed near their company name/address at the top of the PO. Do NOT extract Heritage Foods' GSTIN — Heritage is the supplier receiving this PO, not the buyer.
+- site_code: Look for "Site:", "Store Code:", "DC Code:", "Vendor Location Code".
+- ean: 13-digit barcode number (usually starts with 890 for Heritage products).
+- article_code: The buyer's own SKU / Article number.
+- vendor_article_code: The supplier's (Heritage's) article code on the PO.
+- document_type: If Tax Invoice, Proforma Invoice, GRN, Payment Advice — set accordingly.
+- All monetary values in INR numbers only (no ₹ symbol).
+- Dates must be YYYY-MM-DD. Indian format is DD/MM/YYYY — parse accordingly.
+- Extract ALL line items — do not truncate or summarise.
+- If a field is not present, use null.
+"""
 
 
-def extract_po_data(text_content: str, subject: str = "") -> Optional[dict]:
+def extract_po_data(
+    text_content: str,
+    subject: str = "",
+    profile: Optional[CustomerProfile] = None,
+) -> Optional[dict]:
     """
-    Extract structured PO data from document text using Claude.
-    Implements retry logic with exponential backoff.
+    Extract structured PO data from document text using AI.
+
+    Args:
+        text_content: Raw text extracted from the PDF/Excel attachment.
+        subject:      Email subject line (provides context about PO type).
+        profile:      Customer profile (if already identified). When provided,
+                      customer-specific extraction rules are injected into the prompt
+                      for much higher accuracy.
+
+    Returns:
+        Normalised dict ready for ingestion, or None if extraction fails.
     """
+    # Build the prompt
+    customer_rules = ""
+    if profile:
+        customer_rules = get_extraction_rules_for_prompt(profile)
+
     combined_input = f"Email Subject: {subject}\n\nDocument Content:\n{text_content}"
 
     for attempt in range(settings.LLM_MAX_RETRIES):
         try:
-            result = _call_anthropic(combined_input)
-            
+            result = _call_llm(combined_input, customer_rules=customer_rules)
+
             if result:
-                # ---> ADD THE MAPPING CODE HERE <---
-                # Map the LLM keys to the exact database column names for line items
-                for item in result.get("line_items", []):
-                    item["customer_sku"] = item.pop("article_code", None)
-                    item["material_code"] = item.pop("vendor_article_code", None)
-                # -----------------------------------
+                # Normalise field names from LLM output to DB column names
+                _normalise_line_items(result, profile)
 
                 validated = _validate_schema(result)
                 if validated:
                     return validated
-                    
+
         except Exception as e:
             logger.warning(f"LLM extraction attempt {attempt + 1} failed: {e}")
             if attempt < settings.LLM_MAX_RETRIES - 1:
@@ -95,135 +128,64 @@ def extract_po_data(text_content: str, subject: str = "") -> Optional[dict]:
     return None
 
 
-# def _call_anthropic(content: str) -> Optional[dict]:
-#     """Call Google Gemini API with strict JSON schema enforcement."""
-#     from google import genai
-#     from google.genai import types
-
-#     # Initialize the client using your settings configuration
-#     client = genai.Client(
-#         api_key=settings.GEMINI_API_KEY,
-#         http_options={'client_args': {'verify': False}}  # <--- Nested inside client_args
-#     )
-
-#     # Define the precise schema for native validation
-#     # (This ensures the output matches your OrderLedger/OrderLineItem requirements)
-#     po_schema = types.Schema(
-#         type=types.Type.OBJECT,
-#         properties={
-#             "po_type": types.Schema(type=types.Type.STRING, enum=["NEW", "REVISED", "CANCELLATION"]),
-#             "po_number": types.Schema(type=types.Type.STRING),
-#             "po_date": types.Schema(type=types.Type.STRING),
-#             "customer_code": types.Schema(type=types.Type.STRING),
-#             "customer_name": types.Schema(type=types.Type.STRING),
-#             "site_code": types.Schema(type=types.Type.STRING),
-#             "vendor_gstin": types.Schema(type=types.Type.STRING),
-#             "ship_to_address": types.Schema(type=types.Type.STRING),
-#             "total_value": types.Schema(type=types.Type.NUMBER),
-#             "delivery_date": types.Schema(type=types.Type.STRING),
-#             "expiry_date": types.Schema(type=types.Type.STRING),
-#             "document_type": types.Schema(type=types.Type.STRING, enum=["PURCHASE_ORDER", "TAX_INVOICE", "PROFORMA", "GRN", "OTHER"]),
-#             "line_items": types.Schema(
-#                 type=types.Type.ARRAY,
-#                 items=types.Schema(
-#                     type=types.Type.OBJECT,
-#                     properties={
-#                         "article_code": types.Schema(type=types.Type.STRING),
-#                         "vendor_article_code": types.Schema(type=types.Type.STRING),
-#                         "description": types.Schema(type=types.Type.STRING),
-#                         "uom": types.Schema(type=types.Type.STRING),
-#                         "hsn_code": types.Schema(type=types.Type.STRING),
-#                         "qty": types.Schema(type=types.Type.NUMBER),
-#                         "unit_price": types.Schema(type=types.Type.NUMBER),
-#                         "mrp": types.Schema(type=types.Type.NUMBER),
-#                         "tax_rate": types.Schema(type=types.Type.NUMBER),
-#                         "tax_amount": types.Schema(type=types.Type.NUMBER),
-#                         "line_total": types.Schema(type=types.Type.NUMBER),
-#                     },
-#                     required=["description", "qty", "unit_price"]
-#                 )
-#             )
-#         },
-#         required=["po_number", "line_items", "document_type", "po_type"]
-#     )
-
-#     try:
-#         response = client.models.generate_content(
-#             model='gemini-2.0-flash',  # Or 'gemini-1.5-pro' for highly complex layouts
-#             contents=f"{EXTRACTION_PROMPT}\n\n{content}",
-#             config=types.GenerateContentConfig(
-#                 response_mime_type="application/json",
-#                 response_schema=po_schema,
-#                 temperature=0.1,  # Lower temperature keeps extraction deterministic
-#             ),
-#         )
-        
-#         raw_text = response.text.strip()
-#         return json.loads(raw_text)
-
-#     except Exception as e:
-#         logger.error(f"Gemini API call failed: {e}")
-#         raise e
-    
-def _call_anthropic(content: str) -> Optional[dict]:
+def _normalise_line_items(result: dict, profile: Optional[CustomerProfile]) -> None:
     """
-    Call Google Gemini API with strict JSON schema enforcement.
+    Map LLM field names to DB column names, applying customer-specific logic.
+
+    This is where all the per-customer field mapping quirks are resolved
+    so the rest of the pipeline can work with consistent field names.
     """
-    import json
-    import re
+    for item in result.get("line_items", []):
+        # ── EAN: collect from multiple possible source fields ────────────
+        ean_raw = item.pop("ean", None)
+        article_code = item.pop("article_code", None)
+        vendor_article_code = item.pop("vendor_article_code", None)
+
+        # For Reliance: vendor_article_code IS the EAN (not a material code)
+        if profile and profile.vendor_article_is_ean:
+            ean = vendor_article_code or ean_raw
+            customer_sku = article_code        # Article No. → customer_sku
+            material_code = None               # NEVER map Reliance's article no. as HFL code
+        else:
+            ean = ean_raw
+            customer_sku = article_code
+            material_code = vendor_article_code
+
+        # Validate EAN format (13-digit, starts with 890 for Heritage)
+        if ean:
+            ean = str(ean).strip().replace(" ", "")
+            if not re.match(r"^\d{13}$", ean):
+                logger.debug(f"Discarding malformed EAN: {ean!r}")
+                ean = None
+
+        # For DMart: no material code exists
+        if profile and profile.vr01_strategy == VR01_EAN_ONLY:
+            material_code = None
+
+        item["ean"] = ean
+        item["customer_sku"] = customer_sku
+        item["material_code"] = material_code
+
+
+def _call_llm(content: str, customer_rules: str = "") -> Optional[dict]:
+    """Call Gemini API with the full prompt including customer-specific rules."""
     import google.generativeai as genai
-    
 
     try:
         genai.configure(api_key=settings.GEMINI_API_KEY)
+        model = genai.GenerativeModel(model_name="gemini-2.5-flash")
 
-        model = genai.GenerativeModel(
-            model_name="gemini-2.5-flash"
+        # Inject customer-specific rules between base prompt and document
+        customer_section = ""
+        if customer_rules.strip():
+            customer_section = f"\n\nCUSTOMER-SPECIFIC EXTRACTION RULES (OVERRIDE GENERAL RULES):\n{customer_rules}\n"
+
+        prompt = (
+            BASE_EXTRACTION_PROMPT
+            + customer_section
+            + "\n\nIMPORTANT: Return ONLY valid JSON. No markdown. No ```json blocks.\n\n"
+            + f"Document:\n{content}"
         )
-
-        prompt = f"""
-{EXTRACTION_PROMPT}
-
-IMPORTANT:
-Return ONLY valid JSON.
-Do not return markdown.
-Do not use ```json blocks.
-
-Required JSON structure:
-
-{{
-  "po_type": "NEW | REVISED | CANCELLATION",
-  "po_number": "",
-  "po_date": "",
-  "customer_code": "",
-  "customer_name": "",
-  "site_code": "",
-  "vendor_gstin": "",
-  "ship_to_address": "",
-  "total_value": 0,
-  "delivery_date": "",
-  "expiry_date": "",
-  "document_type": "PURCHASE_ORDER | TAX_INVOICE | PROFORMA | GRN | OTHER",
-  "line_items": [
-    {{
-      "article_code": "",
-      "vendor_article_code": "",
-      "description": "",
-      "uom": "",
-      "hsn_code": "",
-      "qty": 0,
-      "unit_price": 0,
-      "mrp": 0,
-      "tax_rate": 0,
-      "tax_amount": 0,
-      "line_total": 0
-    }}
-  ]
-}}
-
-Document:
-{content}
-"""
 
         response = model.generate_content(
             prompt,
@@ -234,22 +196,19 @@ Document:
         )
 
         if not response.text:
-            logger.error("Gemini returned empty response")
+            logger.error("LLM returned empty response")
             return None
 
         response_text = response.text.strip()
-
-        # Remove markdown fences if Gemini adds them
+        # Strip markdown fences if model ignores the instruction
         response_text = re.sub(
-            r"^```(?:json)?\s*|\s*```$",
-            "",
-            response_text,
-            flags=re.MULTILINE,
+            r"^```(?:json)?\s*|\s*```$", "", response_text, flags=re.MULTILINE
         ).strip()
 
         result = json.loads(response_text)
+        result.pop("vendor_gstin", None)
 
-        # Ensure required fields exist
+        # Ensure required fields have safe defaults
         result.setdefault("po_type", "NEW")
         result.setdefault("po_number", "")
         result.setdefault("document_type", "PURCHASE_ORDER")
@@ -258,37 +217,24 @@ Document:
         return result
 
     except json.JSONDecodeError as e:
-        logger.error(f"Failed to parse Gemini JSON response: {e}")
+        logger.error(f"Failed to parse LLM JSON response: {e}")
         return None
 
     except Exception as e:
         error_text = str(e)
-
         if "CERTIFICATE_VERIFY_FAILED" in error_text:
-            logger.error(
-                "SSL certificate verification failed. "
-                "Check proxy/corporate certificate settings."
-            )
-
+            logger.error("SSL certificate verification failed. Check proxy/corporate certificate settings.")
         elif "429" in error_text or "quota" in error_text.lower():
-            logger.error(
-                "Gemini quota exceeded. Check billing and API quotas."
-            )
-
+            logger.error("Gemini quota exceeded. Check billing and API quotas.")
         elif "API_KEY" in error_text.upper():
-            logger.error(
-                "Invalid Gemini API key."
-            )
-
+            logger.error("Invalid Gemini API key.")
         else:
-            logger.exception(
-                f"Gemini API call failed: {error_text}"
-            )
-
+            logger.exception(f"LLM API call failed: {error_text}")
         raise
 
+
 def _validate_schema(data: dict) -> Optional[dict]:
-    """Validate extracted data against expected schema."""
+    """Validate extracted data has the minimum required structure."""
     required_fields = ["po_number", "line_items", "document_type", "po_type"]
 
     for field in required_fields:
@@ -304,10 +250,9 @@ def _validate_schema(data: dict) -> Optional[dict]:
         logger.warning("No line items extracted")
         return None
 
-    # Validate each line item has at minimum description and qty
     for i, item in enumerate(data["line_items"]):
         if not item.get("description"):
-            logger.warning(f"Line item {i} missing description")
+            logger.debug(f"Line item {i} missing description — will rely on codes for matching")
         if item.get("qty") is None:
             logger.warning(f"Line item {i} missing qty")
 

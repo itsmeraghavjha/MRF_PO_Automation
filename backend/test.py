@@ -6,7 +6,7 @@ from google import genai
 from google.genai import types
 
 # Use your actual key here
-API_KEY = "AIzaSyDtsYY4L4FbuoPdiy8n0OLHhtqgHj71SSw"
+API_KEY = "AIzaSyDtsYY71SSw"
 
 def log_request_url(request: httpx.Request):
     """

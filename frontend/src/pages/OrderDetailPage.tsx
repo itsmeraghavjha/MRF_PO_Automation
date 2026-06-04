@@ -42,9 +42,10 @@ export default function OrderDetailPage() {
       const o = await getOrder(Number(id))
       setOrder(o)
       if (o.drive_link) {
-        const filename = o.drive_link.split('/').pop()
-        setPdfUrl(`/pdfs/${filename}`)
-      }
+  // Handle both Windows backslashes and Unix forward slashes
+  const filename = o.drive_link.split(/[\\/]/).pop()
+  setPdfUrl(`/pdfs/${encodeURIComponent(filename!)}`)
+}
     } catch (e: any) { setError(e.message) }
     finally { setLoading(false) }
   }

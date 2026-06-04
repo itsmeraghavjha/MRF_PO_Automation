@@ -8,6 +8,7 @@ from datetime import datetime
 class LineItemBase(BaseModel):
     material_code: Optional[str] = None
     customer_sku: Optional[str] = None
+    ean: Optional[str] = None                # NEW: EAN barcode
     description: Optional[str] = None
     uom: Optional[str] = None
     hsn_code: Optional[str] = None
@@ -62,6 +63,7 @@ class OrderSummary(BaseModel):
     updated_at: Optional[datetime]
     line_item_count: int = 0
     failed_line_count: int = 0
+    is_cancellation: bool = False            # NEW
 
     class Config:
         from_attributes = True
@@ -122,8 +124,6 @@ class DashboardResponse(BaseModel):
 
 # ── Master Data Schemas ──────────────────────────────────────────────────────
 
-# ── Customer Mapping ──
-
 class CustomerMappingBase(BaseModel):
     cluster: str
     state: Optional[str] = None
@@ -147,8 +147,6 @@ class CustomerMappingResponse(CustomerMappingBase):
         from_attributes = True
 
 
-# ── Product Mapping ──
-
 class ProductMappingBase(BaseModel):
     sold_to_party: str
     customer_sku: Optional[str] = None
@@ -158,6 +156,7 @@ class ProductMappingBase(BaseModel):
     uom: Optional[str] = None
     division: Optional[str] = None
     taxable: bool = True
+    ean: Optional[str] = None              # NEW: EAN barcode for cross-customer lookup
 
 
 class ProductMappingResponse(ProductMappingBase):
@@ -168,8 +167,6 @@ class ProductMappingResponse(ProductMappingBase):
         from_attributes = True
 
 
-# ── Price Master ──
-
 class PriceMasterBase(BaseModel):
     region: Optional[str] = None
     sales_district: str
@@ -178,7 +175,7 @@ class PriceMasterBase(BaseModel):
     mrp: Optional[float] = None
     margin: Optional[float] = None
     offer: Optional[float] = None
-    nlc: float                          # Net Landing Cost — the approved price
+    nlc: float
     effective_from: Optional[str] = None
     effective_to: Optional[str] = None
 
@@ -190,8 +187,6 @@ class PriceMasterResponse(PriceMasterBase):
     class Config:
         from_attributes = True
 
-
-# ── Location Mapping (fallback) ──
 
 class LocationMappingBase(BaseModel):
     cluster: str
@@ -210,8 +205,6 @@ class LocationMappingResponse(LocationMappingBase):
         from_attributes = True
 
 
-# ── Inventory ──
-
 class InventoryMasterBase(BaseModel):
     hfl_sku_code: str
     plant_code: str
@@ -225,8 +218,6 @@ class InventoryMasterResponse(InventoryMasterBase):
     class Config:
         from_attributes = True
 
-
-# ── Case Lot ──
 
 class CaseLotMasterBase(BaseModel):
     cluster: str
@@ -243,8 +234,6 @@ class CaseLotMasterResponse(CaseLotMasterBase):
         from_attributes = True
 
 
-# ── SH-SKU-SO ──
-
 class SHSKUSalesOfficeBase(BaseModel):
     sales_office: str
     ship_to_code: str
@@ -259,8 +248,6 @@ class SHSKUSalesOfficeResponse(SHSKUSalesOfficeBase):
     class Config:
         from_attributes = True
 
-
-# ── Validation Schemas ──────────────────────────────────────────────────────
 
 class ValidationResult(BaseModel):
     rule_id: str
@@ -277,8 +264,6 @@ class RevalidateResponse(BaseModel):
     validation_results: List[ValidationResult]
 
 
-# ── SAP Schemas ──────────────────────────────────────────────────────────
-
 class SAPPushResponse(BaseModel):
     order_id: int
     po_number: str
@@ -288,8 +273,6 @@ class SAPPushResponse(BaseModel):
     pushed_at: datetime
 
 
-# ── Import Response ──────────────────────────────────────────────────────
-
 class ImportResponse(BaseModel):
     imported: int
     skipped: int = 0
@@ -297,16 +280,29 @@ class ImportResponse(BaseModel):
     message: str
 
 
-
 class DistrictMappingBase(BaseModel):
     ship_to_code: str
     sales_district: str
-    customer_code: Optional[str] = None
- 
- 
+    cluster: Optional[str] = None
+
+
 class DistrictMappingResponse(DistrictMappingBase):
     id: int
     updated_at: Optional[datetime]
- 
+
     class Config:
         from_attributes = True
+
+
+# ── Customer Profiles (read-only, for admin UI) ────────────────────────────
+
+class CustomerProfileResponse(BaseModel):
+    """Read-only view of a registered customer profile (from customer_profiles.py)."""
+    cluster: str
+    name: str
+    vr01_strategy: str
+    vr06_gstin_required: bool
+    site_code_pattern: str
+    ean_field: Optional[str]
+    price_field: str
+    notes: Optional[str]
