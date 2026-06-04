@@ -8,8 +8,21 @@ import {
   getOrder, revalidateOrder, pushToSAP, updateLineItem,
   type OrderDetail, type LineItem
 } from '../services/api'
-import { StatusBadge, formatCurrency, formatDate, formatDateTime, CustomerChip } from '../components/shared/StatusBadge'
+import { StatusBadge, formatCurrency, formatDate, formatRelativeTime, CustomerChip } from '../components/shared/StatusBadge'
 import { DeliveryRequestButton } from '../components/shared/DeliveryRequestButton'
+
+const EVENT_LABELS: Record<string, string> = {
+  LINE_EDIT: 'Line item edited',
+  REVALIDATED: 'Re-validation run',
+  SAP_PUSHED: 'SAP CSV generated',
+  STATUS_CHANGE: 'Status updated',
+  DELIVERY_REQUEST_SENT: 'Delivery request sent',
+  DELIVERY_DATE_CONFIRMED: 'Delivery date confirmed',
+}
+
+function humanEvent(type: string) {
+  return EVENT_LABELS[type] || type.replace(/_/g, ' ').toLowerCase()
+}
 
 export default function OrderDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -32,60 +45,43 @@ export default function OrderDetailPage() {
         const filename = o.drive_link.split('/').pop()
         setPdfUrl(`/pdfs/${filename}`)
       }
-    } catch (e: any) {
-      setError(e.message)
-    } finally {
-      setLoading(false)
-    }
+    } catch (e: any) { setError(e.message) }
+    finally { setLoading(false) }
   }
 
   useEffect(() => { load() }, [id])
 
   const handleRevalidate = async () => {
     if (!order) return
-    setActionLoading(true)
-    setError(null)
+    setActionLoading(true); setError(null)
     try {
       await revalidateOrder(order.id)
       await load()
       setSuccessMsg('Re-validation complete')
       setTimeout(() => setSuccessMsg(null), 3000)
-    } catch (e: any) {
-      setError(e.message)
-    } finally {
-      setActionLoading(false)
-    }
+    } catch (e: any) { setError(e.message) }
+    finally { setActionLoading(false) }
   }
 
   const handleSAPPush = async () => {
     if (!order) return
-    setActionLoading(true)
-    setError(null)
+    setActionLoading(true); setError(null)
     try {
       const result = await pushToSAP(order.id)
       await load()
-      setSuccessMsg(`SAP CSV generated: ${result.csv_filename}`)
+      setSuccessMsg(`SAP CSV: ${result.csv_filename}`)
       setTimeout(() => setSuccessMsg(null), 5000)
-    } catch (e: any) {
-      setError(e.message)
-    } finally {
-      setActionLoading(false)
-    }
+    } catch (e: any) { setError(e.message) }
+    finally { setActionLoading(false) }
   }
 
-  const handleLineItemSaved = async () => { await load() }
+  if (loading) return (
+    <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
+      <div className="spinner" style={{ width: 24, height: 24 }} />
+    </div>
+  )
 
-  if (loading) {
-    return (
-      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
-        <div className="spinner" style={{ width: 32, height: 32 }} />
-      </div>
-    )
-  }
-
-  if (!order) {
-    return <div style={{ padding: 28 }}><div style={{ color: 'var(--status-failed)' }}>Order not found.</div></div>
-  }
+  if (!order) return <div style={{ padding: 20, color: 'var(--status-failed)' }}>Order not found.</div>
 
   const canPushSAP = order.status === 'VALIDATED'
   const canRevalidate = ['VALIDATION_FAILED', 'VALIDATED', 'AWAITING_DELIVERY_DATE'].includes(order.status)
@@ -93,62 +89,58 @@ export default function OrderDetailPage() {
 
   return (
     <div style={{ display: 'flex', height: '100%', overflow: 'hidden' }}>
-      {/* ── LEFT PANEL: Order Data ── */}
+      {/* ── LEFT PANEL ── */}
       <div style={{
-        flex: showPdf && hasPdf ? '0 0 55%' : '1 1 100%',
+        flex: showPdf && hasPdf ? '0 0 56%' : '1 1 100%',
         overflowY: 'auto',
-        padding: '24px',
-        transition: 'flex 0.3s ease',
+        padding: '16px 18px',
+        transition: 'flex 0.25s ease',
         borderRight: showPdf && hasPdf ? '1px solid var(--border)' : 'none',
       }}>
-        {/* Header */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 }}>
-          <button className="btn btn-ghost btn-sm btn-icon" onClick={() => navigate('/orders')}>
-            <ArrowLeft size={15} />
+        {/* Header row */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+          <button className="btn btn-ghost btn-icon" onClick={() => navigate('/orders')}>
+            <ArrowLeft size={14} />
           </button>
-          <div style={{ flex: 1 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-              <h2 style={{ fontSize: 18, fontWeight: 800, fontFamily: 'var(--font-display)', margin: 0 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 15, fontWeight: 700, fontFamily: 'var(--font-mono)', letterSpacing: '-0.01em' }}>
                 {order.po_number}
-              </h2>
+              </span>
               <StatusBadge status={order.status} />
               {order.is_update && (
-                <span className="badge" style={{ background: 'rgba(226,168,75,0.12)', color: '#e2a84b' }}>REVISED</span>
+                <span className="badge" style={{ background: 'rgba(194,119,10,0.1)', color: 'var(--accent-amber)' }}>REVISED</span>
               )}
             </div>
-            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
-              {formatDateTime(order.created_at)} · {order.email_sender}
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>
+              {formatRelativeTime(order.created_at)} · {order.email_sender}
             </div>
           </div>
-          <div style={{ display: 'flex', gap: 6, flexShrink: 0, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+          {/* Action buttons */}
+          <div style={{ display: 'flex', gap: 5, flexShrink: 0 }}>
             {hasPdf && (
-              <button
-                className="btn btn-ghost btn-sm"
-                onClick={() => setShowPdf(s => !s)}
-                style={{ fontSize: 11 }}
-              >
-                <FileText size={12} />
-                {showPdf ? 'Hide PDF' : 'View PDF'}
+              <button className="btn btn-ghost btn-sm" onClick={() => setShowPdf(s => !s)}>
+                <FileText size={11} /> {showPdf ? 'Hide PDF' : 'PDF'}
               </button>
             )}
-            <button className="btn btn-ghost btn-sm btn-icon" onClick={load} disabled={actionLoading}>
-              <RefreshCw size={13} />
+            <button className="btn btn-ghost btn-icon" onClick={load} disabled={actionLoading}>
+              <RefreshCw size={12} />
             </button>
             {canRevalidate && (
               <button className="btn btn-secondary btn-sm" onClick={handleRevalidate} disabled={actionLoading}>
-                <RefreshCw size={13} /> Re-validate
+                <RefreshCw size={11} /> Revalidate
               </button>
             )}
             {canPushSAP && (
               <button className="btn btn-primary btn-sm" onClick={handleSAPPush} disabled={actionLoading}>
-                <Send size={13} /> Push to SAP
+                <Send size={11} /> Push to SAP
               </button>
             )}
           </div>
         </div>
 
-        {/* ── Phase 3: Send Delivery Request button row ── */}
-        <div style={{ marginBottom: 16 }}>
+        {/* Delivery request */}
+        <div style={{ marginBottom: 10 }}>
           <DeliveryRequestButton
             orderId={order.id}
             orderStatus={order.status}
@@ -159,112 +151,104 @@ export default function OrderDetailPage() {
 
         {/* Alerts */}
         {error && (
-          <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 8, padding: '9px 12px', marginBottom: 12, color: '#ef4444', fontSize: 12 }}>
-            {error}
+          <div className="alert alert-error" style={{ marginBottom: 10 }}>
+            <AlertTriangle size={12} style={{ flexShrink: 0 }} /> {error}
           </div>
         )}
         {successMsg && (
-          <div style={{ background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.3)', borderRadius: 8, padding: '9px 12px', marginBottom: 12, color: '#10b981', fontSize: 12 }}>
-            <CheckCircle2 size={12} style={{ display: 'inline', marginRight: 5 }} />
-            {successMsg}
+          <div className="alert alert-success" style={{ marginBottom: 10 }}>
+            <CheckCircle2 size={12} style={{ flexShrink: 0 }} /> {successMsg}
           </div>
         )}
-
-        {/* ── Phase 3: AWAITING_DELIVERY_DATE info banner ── */}
         {order.status === 'AWAITING_DELIVERY_DATE' && (
-          <div style={{
-            background: 'rgba(245,158,11,0.08)',
-            border: '1px solid rgba(245,158,11,0.2)',
-            borderRadius: 8,
-            padding: '9px 12px',
-            marginBottom: 12,
-            fontSize: 12,
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
-          }}>
-            <Clock size={13} style={{ color: '#f59e0b', flexShrink: 0 }} />
-            <span style={{ color: 'var(--text-secondary)' }}>
-              <strong style={{ color: '#f59e0b' }}>Awaiting delivery date.</strong>{' '}
-              A confirmation link has been sent to the vendor. Once they confirm,
-              this order will move to VALIDATED automatically.
-            </span>
+          <div className="alert alert-warning" style={{ marginBottom: 10 }}>
+            <Clock size={12} style={{ flexShrink: 0 }} />
+            <span>Awaiting vendor delivery date confirmation.</span>
           </div>
         )}
-
         {order.rejection_summary && (
-          <div style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 8, padding: '9px 12px', marginBottom: 12, fontSize: 12 }}>
-            <AlertTriangle size={12} style={{ display: 'inline', marginRight: 5, color: '#ef4444' }} />
-            <span style={{ color: '#ef4444', fontWeight: 600 }}>Failures: </span>
-            <span style={{ color: 'var(--text-secondary)' }}>{order.rejection_summary}</span>
+          <div className="alert alert-error" style={{ marginBottom: 10 }}>
+            <AlertTriangle size={12} style={{ flexShrink: 0 }} />
+            <span><strong>Failures:</strong> {order.rejection_summary}</span>
           </div>
         )}
 
-        {/* Meta Cards */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
-          <div className="card" style={{ padding: 14 }}>
-            <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>Order Info</div>
-            <MetaRow label="Customer"><CustomerChip code={order.customer_code} name={order.customer_name} /></MetaRow>
-            <MetaRow label="PO Date">{order.po_date || '—'}</MetaRow>
-            <MetaRow label="Delivery">
-              {order.delivery_date
-                ? <span style={{ color: '#10b981' }}>{formatDate(order.delivery_date)}</span>
-                : <span style={{ color: '#f59e0b', display: 'flex', alignItems: 'center', gap: 4 }}><Clock size={10} /> Not set</span>
-              }
-            </MetaRow>
-            <MetaRow label="Total Value">{formatCurrency(order.total_value)}</MetaRow>
-            <MetaRow label="Lines">{order.line_item_count} ({order.failed_line_count} failed)</MetaRow>
+        {/* ── Compact Meta Grid ── */}
+        <div style={{
+          display: 'grid', gridTemplateColumns: '1fr 1fr',
+          gap: 8, marginBottom: 12
+        }}>
+          {/* Order Info */}
+          <div className="card" style={{ padding: '10px 12px' }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>Order</div>
+            <MetaGrid rows={[
+              ['Customer', <CustomerChip code={order.customer_code} name={order.customer_name} />],
+              ['PO Date', order.po_date || '—'],
+              ['Delivery', order.delivery_date
+                ? <span style={{ color: '#1E6B3C', fontFamily: 'var(--font-mono)', fontSize: 11 }}>{formatDate(order.delivery_date)}</span>
+                : <span style={{ color: 'var(--accent-amber)', display: 'flex', alignItems: 'center', gap: 3 }}><Clock size={10} />Not set</span>
+              ],
+              ['Total Value', <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, fontWeight: 600 }}>{formatCurrency(order.total_value)}</span>],
+              ['Lines', `${order.line_item_count} (${order.failed_line_count} failed)`],
+            ]} />
           </div>
-          <div className="card" style={{ padding: 14 }}>
-            <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>Delivery & Legal</div>
-            <MetaRow label="Ship To Code">{order.ship_to_code || <span style={{ color: '#ef4444' }}>Not mapped</span>}</MetaRow>
-            <MetaRow label="Ship To">{order.ship_to_address || '—'}</MetaRow>
-            <MetaRow label="GSTIN">
-              {order.vendor_gstin
+
+          {/* Ship-to & Legal */}
+          <div className="card" style={{ padding: '10px 12px' }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>Dispatch & Legal</div>
+            <MetaGrid rows={[
+              ['Ship-to Code', order.ship_to_code
+                ? <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11 }}>{order.ship_to_code}</span>
+                : <span style={{ color: '#C8272D', fontSize: 11 }}>Not mapped</span>
+              ],
+              ['Address', <span style={{ fontSize: 11, color: 'var(--text-muted)' }} title={order.ship_to_address || ''}>{order.ship_to_address?.slice(0, 40) || '—'}</span>],
+              ['Sales District', order.sales_district || <span style={{ color: 'var(--text-subtle)' }}>—</span>],
+              ['GSTIN', order.vendor_gstin
                 ? <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10 }}>{order.vendor_gstin}</span>
-                : <span style={{ color: '#ef4444' }}>Missing</span>
-              }
-            </MetaRow>
-            {pdfUrl && (
-              <MetaRow label="Attachment">
-                <a href={pdfUrl} target="_blank" rel="noreferrer"
-                  style={{ color: 'var(--accent-blue)', fontSize: 11, display: 'flex', alignItems: 'center', gap: 4 }}>
-                  <ExternalLink size={10} /> Open file
-                </a>
-              </MetaRow>
-            )}
+                : <span style={{ color: '#C8272D', fontSize: 11 }}>Missing</span>
+              ],
+              ['Attachment', pdfUrl
+                ? <a href={pdfUrl} target="_blank" rel="noreferrer"
+                    style={{ color: 'var(--accent-blue)', fontSize: 11, display: 'flex', alignItems: 'center', gap: 3 }}>
+                    <ExternalLink size={10} /> Open file
+                  </a>
+                : <span style={{ color: 'var(--text-subtle)', fontSize: 11 }}>—</span>
+              ],
+            ]} />
           </div>
         </div>
 
         {/* Line Items */}
-        <LineItemsTable
-          order={order}
-          onSaved={handleLineItemSaved}
-          canEdit={order.status !== 'SAP_SUCCESS'}
-        />
+        <LineItemsTable order={order} onSaved={load} canEdit={order.status !== 'SAP_SUCCESS'} />
 
         {/* Audit Log */}
-        <div className="card" style={{ marginTop: 14, padding: 0, overflow: 'hidden' }}>
-          <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)' }}>
-            <h3 style={{ fontSize: 13, fontWeight: 700, fontFamily: 'var(--font-display)', margin: 0 }}>Audit Trail</h3>
+        <div className="card" style={{ marginTop: 10, padding: 0, overflow: 'hidden' }}>
+          <div style={{ padding: '8px 12px', borderBottom: '1px solid var(--border)' }}>
+            <span style={{ fontSize: 12, fontWeight: 600 }}>Audit Trail</span>
           </div>
-          <div style={{ padding: '4px 0', maxHeight: 200, overflowY: 'auto' }}>
+          <div style={{ maxHeight: 180, overflowY: 'auto' }}>
             {order.audit_logs.length === 0 && (
-              <div style={{ padding: '20px', color: 'var(--text-muted)', fontSize: 12, textAlign: 'center' }}>No audit events yet</div>
+              <div style={{ padding: '16px', color: 'var(--text-muted)', fontSize: 11, textAlign: 'center' }}>
+                No events yet
+              </div>
             )}
             {order.audit_logs.map(log => (
-              <div key={log.id} style={{ display: 'flex', gap: 10, padding: '8px 16px', borderBottom: '1px solid var(--border)', alignItems: 'flex-start' }}>
+              <div key={log.id} style={{
+                display: 'flex', gap: 8, padding: '6px 12px',
+                borderBottom: '1px solid var(--neutral-100)', alignItems: 'flex-start'
+              }}>
                 <div style={{
-                  width: 6, height: 6, borderRadius: '50%', marginTop: 5, flexShrink: 0,
-                  background: log.event_type === 'DELIVERY_REQUEST_SENT' ? '#f59e0b'
-                    : log.event_type === 'DELIVERY_DATE_CONFIRMED' ? '#10b981'
-                    : log.event_type === 'SAP_PUSHED' ? '#3b82f6'
-                    : 'var(--accent-blue)'
+                  width: 5, height: 5, borderRadius: '50%', marginTop: 5, flexShrink: 0,
+                  background: log.event_type === 'SAP_PUSHED' ? '#3b82f6'
+                    : log.event_type.includes('DELIVERY') ? '#f59e0b'
+                    : 'var(--brand-green)'
                 }} />
-                <div>
-                  <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{log.description}</div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                    {log.description}
+                  </div>
                   <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 1 }}>
-                    {log.event_type} · {log.performed_by} · {formatDateTime(log.created_at)}
+                    {humanEvent(log.event_type)} · {log.performed_by} · {formatRelativeTime(log.created_at)}
                   </div>
                 </div>
               </div>
@@ -273,47 +257,63 @@ export default function OrderDetailPage() {
         </div>
       </div>
 
-      {/* ── RIGHT PANEL: PDF Viewer ── */}
+      {/* ── RIGHT PANEL: PDF ── */}
       {showPdf && hasPdf && (
-        <div style={{ flex: '0 0 45%', display: 'flex', flexDirection: 'column', background: '#1a2332', borderLeft: '1px solid var(--border)' }}>
+        <div style={{
+          flex: '0 0 44%',
+          display: 'flex', flexDirection: 'column',
+          background: '#1a2332',
+          borderLeft: '1px solid var(--border)'
+        }}>
           <div style={{
             display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-            padding: '10px 14px', borderBottom: '1px solid var(--border)',
+            padding: '7px 12px', borderBottom: '1px solid var(--border)',
             background: 'var(--bg-surface)', flexShrink: 0
           }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <FileText size={13} color="var(--accent-amber)" />
-              <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>
-                Original PO Document
-              </span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <FileText size={12} color="var(--accent-amber)" />
+              <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)' }}>Original PO</span>
             </div>
-            <div style={{ display: 'flex', gap: 6 }}>
-              <a href={pdfUrl!} target="_blank" rel="noreferrer" className="btn btn-ghost btn-sm" style={{ fontSize: 11 }}>
-                <ExternalLink size={11} /> Open
+            <div style={{ display: 'flex', gap: 5 }}>
+              <a href={pdfUrl!} target="_blank" rel="noreferrer" className="btn btn-ghost btn-sm">
+                <ExternalLink size={10} /> Open
               </a>
-              <button className="btn btn-ghost btn-sm btn-icon" onClick={() => setShowPdf(false)}>
-                <X size={13} />
+              <button className="btn btn-ghost btn-icon" onClick={() => setShowPdf(false)}>
+                <X size={12} />
               </button>
             </div>
           </div>
-          <iframe
-            src={pdfUrl!}
-            style={{ flex: 1, border: 'none', width: '100%' }}
-            title="PO Document"
-          />
+          <iframe src={pdfUrl!} style={{ flex: 1, border: 'none', width: '100%' }} title="PO Document" />
         </div>
       )}
     </div>
   )
 }
 
-// ── Line Items Table ──────────────────────────────────────────────────────
+// ── Compact Meta Grid ──────────────────────────────────────────────────────
+function MetaGrid({ rows }: { rows: [string, React.ReactNode][] }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+      {rows.map(([label, value], i) => (
+        <div key={i} style={{
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+          padding: '4px 0',
+          borderBottom: i < rows.length - 1 ? '1px solid var(--neutral-100)' : 'none',
+          gap: 8
+        }}>
+          <span style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 500, flexShrink: 0 }}>{label}</span>
+          <span style={{ fontSize: 12, color: 'var(--text-secondary)', textAlign: 'right' }}>{value}</span>
+        </div>
+      ))}
+    </div>
+  )
+}
 
+// ── Line Items Table ──────────────────────────────────────────────────────
 function LineItemsTable({ order, onSaved, canEdit }: {
   order: OrderDetail; onSaved: () => void; canEdit: boolean
 }) {
   const [lineItems, setLineItems] = useState(order.line_items)
-
   useEffect(() => { setLineItems(order.line_items) }, [order.line_items])
 
   const updateLocalItem = (id: number, changes: Partial<LineItem>) => {
@@ -326,9 +326,17 @@ function LineItemsTable({ order, onSaved, canEdit }: {
 
   return (
     <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-      <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <h3 style={{ fontSize: 13, fontWeight: 700, fontFamily: 'var(--font-display)', margin: 0 }}>Line Items</h3>
-        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 13, fontWeight: 700, color: totalChanged ? '#f59e0b' : '#10b981' }}>
+      <div style={{
+        padding: '8px 12px', borderBottom: '1px solid var(--border)',
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between'
+      }}>
+        <span style={{ fontSize: 12, fontWeight: 600 }}>
+          Line Items <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>({lineItems.length})</span>
+        </span>
+        <span style={{
+          fontFamily: 'var(--font-mono)', fontSize: 12, fontWeight: 700,
+          color: totalChanged ? 'var(--accent-amber)' : '#1E6B3C'
+        }}>
           {formatCurrency(totalChanged ? liveTotal : originalTotal)}
         </span>
       </div>
@@ -336,15 +344,14 @@ function LineItemsTable({ order, onSaved, canEdit }: {
         <table className="data-table">
           <thead>
             <tr>
-              <th>Material Code</th>
+              <th>Material</th>
               <th>Description</th>
               <th>UOM</th>
               <th>Qty</th>
               <th>Unit Price</th>
-              <th>Tax %</th>
               <th>Line Total</th>
-              <th>Status</th>
-              {canEdit && <th></th>}
+              <th>Valid</th>
+              {canEdit && <th style={{ width: 60 }}></th>}
             </tr>
           </thead>
           <tbody>
@@ -374,7 +381,7 @@ function LineItemRow({ item, orderId, onSaved, onLocalChange, canEdit }: {
   const [price, setPrice] = useState(String(item.unit_price ?? ''))
   const [saving, setSaving] = useState(false)
 
-  const liveLineTotal = editing
+  const liveTotal = editing
     ? (Number(qty) || 0) * (Number(price) || 0)
     : (item.line_total ?? 0)
 
@@ -401,46 +408,55 @@ function LineItemRow({ item, orderId, onSaved, onLocalChange, canEdit }: {
   }
 
   return (
-    <tr style={!item.is_valid ? { background: 'rgba(239,68,68,0.04)' } : {}}>
-      <td className="mono-data" style={{ color: item.is_valid ? 'var(--text-secondary)' : '#ef4444', fontSize: 11 }}>
-        {item.material_code || <span style={{ color: '#ef4444' }}>UNKNOWN</span>}
+    <tr style={!item.is_valid ? { background: 'rgba(200,39,45,0.03)' } : {}}>
+      <td className="mono-data" style={{
+        color: item.is_valid ? 'var(--text-secondary)' : '#C8272D', fontSize: 11
+      }}>
+        {item.material_code || <span style={{ color: '#C8272D' }}>UNKNOWN</span>}
       </td>
       <td style={{ fontSize: 11, maxWidth: 160 }}>
         <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.description || '—'}</div>
         {item.rejection_reason && (
-          <div style={{ fontSize: 10, color: '#ef4444', marginTop: 2, whiteSpace: 'normal' }}>
-            <AlertTriangle size={9} style={{ display: 'inline', marginRight: 3 }} />
-            {item.rejection_reason}
+          <div style={{ fontSize: 10, color: '#C8272D', marginTop: 1, display: 'flex', alignItems: 'flex-start', gap: 3 }}>
+            <AlertTriangle size={9} style={{ flexShrink: 0, marginTop: 1 }} />
+            <span style={{ whiteSpace: 'normal', lineHeight: 1.3 }}>{item.rejection_reason}</span>
           </div>
         )}
       </td>
       <td style={{ fontSize: 11, color: 'var(--text-muted)' }}>{item.uom || '—'}</td>
-      <td>{editing ? <input className="input input-sm" style={{ width: 65 }} value={qty} onChange={e => handleQtyChange(e.target.value)} /> : <span className="mono-data">{item.qty ?? '—'}</span>}</td>
-      <td>{editing ? <input className="input input-sm" style={{ width: 80 }} value={price} onChange={e => handlePriceChange(e.target.value)} /> : <span className="mono-data">{item.unit_price != null ? `₹${item.unit_price}` : '—'}</span>}</td>
-      <td className="mono-data" style={{ fontSize: 11 }}>{item.tax_rate != null ? `${item.tax_rate}%` : '—'}</td>
-      <td className="mono-data" style={{ color: editing ? '#f59e0b' : 'inherit' }}>{formatCurrency(liveLineTotal)}</td>
-      <td>{item.is_valid ? <span style={{ color: '#10b981', fontSize: 11 }}>✓ Valid</span> : <span style={{ color: '#ef4444', fontSize: 11 }}>✕ Invalid</span>}</td>
+      <td>
+        {editing
+          ? <input className="input input-sm" style={{ width: 60 }} value={qty} onChange={e => handleQtyChange(e.target.value)} />
+          : <span className="mono-data">{item.qty ?? '—'}</span>
+        }
+      </td>
+      <td>
+        {editing
+          ? <input className="input input-sm" style={{ width: 75 }} value={price} onChange={e => handlePriceChange(e.target.value)} />
+          : <span className="mono-data">{item.unit_price != null ? `₹${item.unit_price}` : '—'}</span>
+        }
+      </td>
+      <td className="mono-data" style={{ color: editing ? 'var(--accent-amber)' : 'inherit' }}>
+        {formatCurrency(liveTotal)}
+      </td>
+      <td>
+        {item.is_valid
+          ? <span style={{ color: '#1E6B3C', fontSize: 11, fontWeight: 600 }}>✓</span>
+          : <span style={{ color: '#C8272D', fontSize: 11, fontWeight: 600 }}>✕</span>
+        }
+      </td>
       {canEdit && (
         <td>
           {editing ? (
-            <div style={{ display: 'flex', gap: 4 }}>
-              <button className="btn btn-success btn-sm btn-icon" onClick={handleSave} disabled={saving}><Save size={11} /></button>
-              <button className="btn btn-ghost btn-sm btn-icon" onClick={handleCancel}><X size={11} /></button>
+            <div style={{ display: 'flex', gap: 3 }}>
+              <button className="btn btn-success btn-sm btn-icon" onClick={handleSave} disabled={saving}><Save size={10} /></button>
+              <button className="btn btn-ghost btn-sm btn-icon" onClick={handleCancel}><X size={10} /></button>
             </div>
           ) : (
-            <button className="btn btn-ghost btn-sm btn-icon" onClick={() => setEditing(true)}><Edit2 size={11} /></button>
+            <button className="btn btn-ghost btn-sm btn-icon" onClick={() => setEditing(true)}><Edit2 size={10} /></button>
           )}
         </td>
       )}
     </tr>
-  )
-}
-
-function MetaRow({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '5px 0', borderBottom: '1px solid var(--border)', gap: 8 }}>
-      <span style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', flexShrink: 0 }}>{label}</span>
-      <span style={{ fontSize: 12, color: 'var(--text-secondary)', textAlign: 'right' }}>{children}</span>
-    </div>
   )
 }

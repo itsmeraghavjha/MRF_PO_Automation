@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Search, Filter, RefreshCw, Package } from 'lucide-react'
 import { getOrders, type OrderSummary, type OrderListResponse } from '../services/api'
-import { StatusBadge, formatCurrency, formatDateTime, CustomerChip } from '../components/shared/StatusBadge'
+import { StatusBadge, formatCurrency, formatRelativeTime, CustomerChip } from '../components/shared/StatusBadge'
 
 const STATUS_OPTIONS = [
   { value: '', label: 'All Statuses' },
@@ -25,13 +25,10 @@ export default function OrdersPage() {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const result = await getOrders({ page, page_size: 20, status: status || undefined, search: search || undefined })
+      const result = await getOrders({ page, page_size: 25, status: status || undefined, search: search || undefined })
       setData(result)
-    } catch (e) {
-      console.error(e)
-    } finally {
-      setLoading(false)
-    }
+    } catch (e) { console.error(e) }
+    finally { setLoading(false) }
   }, [page, status, search])
 
   useEffect(() => { load() }, [load])
@@ -42,73 +39,66 @@ export default function OrdersPage() {
     setPage(1)
   }
 
-  const handleStatusChange = (val: string) => {
-    setStatus(val)
-    setPage(1)
-  }
-
-  const totalPages = data ? Math.ceil(data.total / 20) : 0
+  const handleStatusChange = (val: string) => { setStatus(val); setPage(1) }
+  const totalPages = data ? Math.ceil(data.total / 25) : 0
 
   return (
-    <div style={{ padding: '28px' }} className="animate-fade">
-      {/* Header */}
-      <div style={{ marginBottom: 24, display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+    <div style={{ padding: '20px' }} className="animate-fade">
+      {/* Header + Toolbar — single row */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
         <div>
-          <h2 style={{ fontSize: 24, fontWeight: 800, fontFamily: 'var(--font-display)', marginBottom: 4 }}>
-            All Orders
-          </h2>
-          <p style={{ color: 'var(--text-secondary)', fontSize: 13, margin: 0 }}>
+          <h2 style={{ fontSize: 18, fontWeight: 700, letterSpacing: '-0.02em', marginBottom: 1 }}>Orders</h2>
+          <p style={{ color: 'var(--text-muted)', fontSize: 11 }}>
             {data ? `${data.total} purchase orders` : 'Loading…'}
           </p>
         </div>
-        <button className="btn btn-ghost btn-sm btn-icon" onClick={load}>
-          <RefreshCw size={13} />
-        </button>
-      </div>
-
-      {/* Filters */}
-      <div style={{ display: 'flex', gap: 10, marginBottom: 20 }}>
-        <form onSubmit={handleSearch} style={{ display: 'flex', gap: 8, flex: 1 }}>
-          <div style={{ position: 'relative', flex: 1, maxWidth: 340 }}>
-            <Search size={13} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
-            <input
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {/* Search */}
+          <form onSubmit={handleSearch} style={{ display: 'flex', gap: 6 }}>
+            <div style={{ position: 'relative' }}>
+              <Search size={11} style={{
+                position: 'absolute', left: 8, top: '50%',
+                transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none'
+              }} />
+              <input
+                className="input input-sm"
+                style={{ paddingLeft: 26, width: 200 }}
+                placeholder="PO number, customer…"
+                value={searchInput}
+                onChange={e => setSearchInput(e.target.value)}
+              />
+            </div>
+            <button type="submit" className="btn btn-secondary btn-sm">Search</button>
+            {search && (
+              <button type="button" className="btn btn-ghost btn-sm"
+                onClick={() => { setSearch(''); setSearchInput(''); setPage(1) }}>
+                Clear
+              </button>
+            )}
+          </form>
+          {/* Status filter */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+            <Filter size={11} style={{ color: 'var(--text-muted)' }} />
+            <select
               className="input input-sm"
-              style={{ paddingLeft: 30 }}
-              placeholder="Search PO number, customer…"
-              value={searchInput}
-              onChange={e => setSearchInput(e.target.value)}
-            />
+              style={{ width: 'auto', minWidth: 140 }}
+              value={status}
+              onChange={e => handleStatusChange(e.target.value)}
+            >
+              {STATUS_OPTIONS.map(o => (
+                <option key={o.value} value={o.value}>{o.label}</option>
+              ))}
+            </select>
           </div>
-          <button type="submit" className="btn btn-secondary btn-sm">
-            Search
-          </button>
-          {search && (
-            <button type="button" className="btn btn-ghost btn-sm" onClick={() => { setSearch(''); setSearchInput(''); setPage(1) }}>
-              Clear
-            </button>
-          )}
-        </form>
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <Filter size={13} style={{ color: 'var(--text-muted)' }} />
-          <select
-            className="input input-sm"
-            style={{ width: 'auto', minWidth: 160 }}
-            value={status}
-            onChange={e => handleStatusChange(e.target.value)}
-          >
-            {STATUS_OPTIONS.map(o => (
-              <option key={o.value} value={o.value}>{o.label}</option>
-            ))}
-          </select>
+          <button className="btn btn-ghost btn-icon" onClick={load}><RefreshCw size={12} /></button>
         </div>
       </div>
 
       {/* Table */}
       <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
         {loading ? (
-          <div style={{ display: 'flex', justifyContent: 'center', padding: 60 }}>
-            <div className="spinner" style={{ width: 28, height: 28 }} />
+          <div style={{ display: 'flex', justifyContent: 'center', padding: 48 }}>
+            <div className="spinner" style={{ width: 22, height: 22 }} />
           </div>
         ) : (
           <>
@@ -121,6 +111,7 @@ export default function OrdersPage() {
                   <th>PO Date</th>
                   <th>Value</th>
                   <th>Lines</th>
+                  <th>Rejection</th>
                   <th>Status</th>
                 </tr>
               </thead>
@@ -131,11 +122,11 @@ export default function OrdersPage() {
               </tbody>
             </table>
 
-            {(!data?.orders.length) && (
+            {!data?.orders.length && (
               <div className="empty-state">
-                <Package size={40} className="empty-state-icon" />
-                <div style={{ fontSize: 14, fontWeight: 600 }}>No orders found</div>
-                <div style={{ fontSize: 12 }}>Try adjusting your filters</div>
+                <Package size={32} className="empty-state-icon" />
+                <div style={{ fontSize: 13, fontWeight: 600 }}>No orders found</div>
+                <div style={{ fontSize: 11 }}>Try adjusting your filters</div>
               </div>
             )}
 
@@ -143,18 +134,14 @@ export default function OrdersPage() {
             {totalPages > 1 && (
               <div style={{
                 display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                padding: '12px 16px', borderTop: '1px solid var(--border)'
+                padding: '8px 14px', borderTop: '1px solid var(--border)'
               }}>
-                <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
                   Page {page} of {totalPages} · {data?.total} total
                 </span>
-                <div style={{ display: 'flex', gap: 6 }}>
-                  <button className="btn btn-secondary btn-sm" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>
-                    ← Prev
-                  </button>
-                  <button className="btn btn-secondary btn-sm" disabled={page >= totalPages} onClick={() => setPage(p => p + 1)}>
-                    Next →
-                  </button>
+                <div style={{ display: 'flex', gap: 5 }}>
+                  <button className="btn btn-secondary btn-sm" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>← Prev</button>
+                  <button className="btn btn-secondary btn-sm" disabled={page >= totalPages} onClick={() => setPage(p => p + 1)}>Next →</button>
                 </div>
               </div>
             )}
@@ -168,16 +155,26 @@ export default function OrdersPage() {
 function OrderRow({ order, onClick }: { order: OrderSummary; onClick: () => void }) {
   return (
     <tr onClick={onClick}>
-      <td className="primary mono-data">{order.po_number}</td>
+      <td className="primary mono-data" style={{ fontSize: 11 }}>{order.po_number}</td>
       <td><CustomerChip code={order.customer_code} name={order.customer_name} /></td>
-      <td style={{ color: 'var(--text-muted)', fontSize: 12 }}>{formatDateTime(order.created_at)}</td>
-      <td style={{ color: 'var(--text-muted)', fontSize: 12 }}>{order.po_date || '—'}</td>
+      <td style={{ color: 'var(--text-muted)', fontSize: 11 }}>{formatRelativeTime(order.created_at)}</td>
+      <td style={{ color: 'var(--text-muted)', fontSize: 11 }}>{order.po_date || '—'}</td>
       <td className="mono-data">{formatCurrency(order.total_value)}</td>
-      <td style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', fontSize: 12 }}>
+      <td style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text-muted)' }}>
         {order.line_item_count}
         {order.failed_line_count > 0 && (
-          <span style={{ color: '#ef4444', marginLeft: 4 }}>({order.failed_line_count} ✕)</span>
+          <span style={{ color: '#C8272D', marginLeft: 3 }}>({order.failed_line_count}✕)</span>
         )}
+      </td>
+      <td style={{ maxWidth: 180 }}>
+        {order.rejection_summary ? (
+          <span style={{
+            fontSize: 10, color: '#C8272D',
+            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block'
+          }} title={order.rejection_summary}>
+            {order.rejection_summary}
+          </span>
+        ) : <span style={{ color: 'var(--text-subtle)', fontSize: 11 }}>—</span>}
       </td>
       <td><StatusBadge status={order.status} /></td>
     </tr>

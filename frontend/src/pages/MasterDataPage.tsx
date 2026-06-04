@@ -546,7 +546,7 @@ function PricesTab() {
                     <td className="mono-data" style={{ fontSize: 12 }}>{editId === item.id ? <InlineInput value={String(editData.mrp ?? '')} onChange={ed('mrp')} type="number" width={80} /> : (item.mrp != null ? `₹${item.mrp}` : '—')}</td>
                     <td className="mono-data" style={{ color: '#10b981', fontWeight: 600 }}>{editId === item.id ? <InlineInput value={String(editData.nlc ?? '')} onChange={ed('nlc')} type="number" width={80} /> : `₹${item.nlc}`}</td>
                     <td className="mono-data" style={{ fontSize: 12 }}>{editId === item.id ? <InlineInput value={String(editData.margin ?? '')} onChange={ed('margin')} type="number" width={70} /> : (item.margin != null ? `${item.margin}%` : '—')}</td>
-                    <td className="mono-data" style={{ fontSize: 12 }}>{editId === item.id ? <InlineInput value={String(editData.offer ?? '')} onChange={ed('offer')} type="number" width={70} /> : (item.offer != null ? item.offer : '—')}</td>
+                    
                     <td style={{ fontSize: 11, color: 'var(--text-muted)' }}>{editId === item.id ? <InlineInput value={String(editData.effective_from ?? '')} onChange={ed('effective_from')} /> : (item.effective_from || '—')}</td>
                     <td style={{ fontSize: 11, color: 'var(--text-muted)' }}>{editId === item.id ? <InlineInput value={String(editData.effective_to ?? '')} onChange={ed('effective_to')} /> : (item.effective_to || '—')}</td>
                     <td>
